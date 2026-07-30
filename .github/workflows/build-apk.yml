@@ -1,12 +1,10 @@
 name: Compiler l'APK debug
 
-# Se déclenche sur push main, sur les PR vers main, ou manuellement
-# depuis l'onglet "Actions" de GitHub.
+# APK téléchargeable avant merge : PR, push branches cursor/*, ou manuel.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'cursor/**' ]
   pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:

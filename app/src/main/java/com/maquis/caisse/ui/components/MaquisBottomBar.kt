@@ -8,28 +8,47 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import com.maquis.caisse.navigation.Routes
 
 /**
- * Barre de navigation basse — cibles tactiles larges par défaut (Material3),
+ * Barre de navigation basse — cibles tactiles larges (Material3),
  * cohérent avec la contrainte UX "≥ 48dp / usage à une main".
- * SPRINT 0 : seules Caisse / Produits sont branchées ; les autres onglets
- * (Tables, Commandes, Avoirs, Dettes...) seront ajoutés au fil des sprints
- * pour éviter une barre surchargée dès le départ.
+ *
+ * Sprint 1 : Caisse + Produits. Les autres onglets arriveront au fil
+ * des sprints pour éviter une barre surchargée.
  */
 @Composable
 fun MaquisBottomBar(navController: NavHostController) {
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+
     NavigationBar {
         NavigationBarItem(
-            selected = true,
-            onClick = { navController.navigate(Routes.CAISSE) },
+            selected = currentRoute == Routes.CAISSE,
+            onClick = {
+                if (currentRoute != Routes.CAISSE) {
+                    navController.navigate(Routes.CAISSE) {
+                        popUpTo(Routes.CAISSE) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            },
             icon = { Icon(Icons.Filled.ShoppingCart, contentDescription = null) },
             label = { Text("Caisse") },
         )
         NavigationBarItem(
-            selected = false,
-            onClick = { navController.navigate(Routes.PRODUITS) },
+            selected = currentRoute == Routes.PRODUITS,
+            onClick = {
+                if (currentRoute != Routes.PRODUITS) {
+                    navController.navigate(Routes.PRODUITS) {
+                        popUpTo(Routes.CAISSE) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            },
             icon = { Icon(Icons.Filled.Inventory2, contentDescription = null) },
             label = { Text("Produits") },
         )

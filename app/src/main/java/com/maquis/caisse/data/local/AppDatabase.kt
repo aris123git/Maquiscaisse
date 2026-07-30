@@ -2,21 +2,23 @@ package com.maquis.caisse.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import com.maquis.caisse.data.local.dao.ProductDao
+import com.maquis.caisse.data.local.entity.ProductEntity
 
 /**
  * Base Room unique de l'application (offline-first).
  *
- * SPRINT 0 : socle vide. Aucune entité métier n'est encore déclarée —
- * elles seront ajoutées sprint par sprint (Product au Sprint 1, Sale/
- * SaleItem au Sprint 2, Table/Order/CashSession/Voucher/Debt ensuite).
+ * Version 1 (Sprint 0) : socle vide.
+ * Version 2 (Sprint 1) : table `products`.
  *
- * Règle absolue pour tous les sprints suivants : toute évolution de ce
- * schéma doit passer par une Migration explicite (voir DatabaseModule),
- * jamais par fallbackToDestructiveMigration().
+ * Toute évolution passe par une Migration explicite (voir DatabaseModule /
+ * Migrations), jamais par fallbackToDestructiveMigration().
  */
 @Database(
-    entities = [],
-    version = 1,
+    entities = [ProductEntity::class],
+    version = 2,
     exportSchema = true,
 )
-abstract class AppDatabase : RoomDatabase()
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun productDao(): ProductDao
+}

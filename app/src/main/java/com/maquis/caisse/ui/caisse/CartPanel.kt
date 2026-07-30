@@ -83,7 +83,7 @@ fun CartPanel(
                 }
             }
             Text(
-                text = "Appui long pour modifier",
+                text = "Tape une ligne pour modifier",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

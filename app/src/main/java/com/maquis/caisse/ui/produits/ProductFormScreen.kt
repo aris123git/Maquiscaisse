@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
+import com.maquis.caisse.core.Constants
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -215,7 +216,12 @@ fun ProductFormScreen(
             OutlinedTextField(
                 value = form.salePrice,
                 onValueChange = { value ->
-                    onUpdate { it.copy(salePrice = value.filter { c -> c.isDigit() }) }
+                    onUpdate {
+                        it.copy(
+                            salePrice = value.filter { c -> c.isDigit() }
+                                .take(Constants.MAX_MONEY_DIGITS),
+                        )
+                    }
                 },
                 label = { Text("Prix de vente (FCFA) *") },
                 singleLine = true,
@@ -224,7 +230,12 @@ fun ProductFormScreen(
             OutlinedTextField(
                 value = form.purchasePrice,
                 onValueChange = { value ->
-                    onUpdate { it.copy(purchasePrice = value.filter { c -> c.isDigit() }) }
+                    onUpdate {
+                        it.copy(
+                            purchasePrice = value.filter { c -> c.isDigit() }
+                                .take(Constants.MAX_MONEY_DIGITS),
+                        )
+                    }
                 },
                 label = { Text("Prix d'achat (FCFA)") },
                 singleLine = true,
@@ -233,7 +244,12 @@ fun ProductFormScreen(
             OutlinedTextField(
                 value = form.stock,
                 onValueChange = { value ->
-                    onUpdate { it.copy(stock = value.filter { c -> c.isDigit() }) }
+                    onUpdate {
+                        it.copy(
+                            stock = value.filter { c -> c.isDigit() }
+                                .take(Constants.MAX_STOCK_DIGITS),
+                        )
+                    }
                 },
                 label = { Text("Stock") },
                 singleLine = true,
@@ -242,7 +258,12 @@ fun ProductFormScreen(
             OutlinedTextField(
                 value = form.alertThreshold,
                 onValueChange = { value ->
-                    onUpdate { it.copy(alertThreshold = value.filter { c -> c.isDigit() }) }
+                    onUpdate {
+                        it.copy(
+                            alertThreshold = value.filter { c -> c.isDigit() }
+                                .take(Constants.MAX_STOCK_DIGITS),
+                        )
+                    }
                 },
                 label = { Text("Seuil d'alerte stock") },
                 singleLine = true,

@@ -8,6 +8,8 @@ package com.maquis.caisse.core
 object Constants {
     const val CURRENCY_LABEL = "FCFA"
     const val MAX_QUANTITY_DIGITS = 4 // limite raisonnable de saisie au pavé numérique
+    const val MAX_MONEY_DIGITS = 9
+    const val MAX_STOCK_DIGITS = 7
 
     /** Nombre de colonnes de la grille produits (usage une main / tuiles larges). */
     const val PRODUCT_GRID_COLUMNS = 2

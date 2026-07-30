@@ -10,7 +10,7 @@ class AddProductUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(product: Product, imageUri: Uri?): Long {
         require(product.name.isNotBlank()) { "Le nom du produit est obligatoire" }
-        require(product.salePrice >= 0) { "Le prix de vente doit être ≥ 0" }
+        require(product.salePrice > 0) { "Le prix de vente doit être > 0" }
         require(product.purchasePrice >= 0) { "Le prix d'achat doit être ≥ 0" }
         return repository.addProduct(product, imageUri)
     }

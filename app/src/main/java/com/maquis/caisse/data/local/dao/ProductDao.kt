@@ -35,16 +35,16 @@ interface ProductDao {
     @Query("DELETE FROM products WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    /** Décrémente le stock (jamais sous 0). Appelé à la validation caisse. */
+    /**
+     * Décrémente le stock seulement s'il est suffisant.
+     * @return nombre de lignes modifiées (0 = stock insuffisant ou produit absent).
+     */
     @Query(
         """
         UPDATE products
-        SET stock = CASE
-            WHEN stock >= :quantity THEN stock - :quantity
-            ELSE 0
-        END
-        WHERE id = :productId
+        SET stock = stock - :quantity
+        WHERE id = :productId AND stock >= :quantity AND is_active = 1
         """,
     )
-    suspend fun decreaseStock(productId: Long, quantity: Int)
+    suspend fun decreaseStockIfAvailable(productId: Long, quantity: Int): Int
 }

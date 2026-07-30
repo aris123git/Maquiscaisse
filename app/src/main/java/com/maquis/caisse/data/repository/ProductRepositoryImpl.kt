@@ -32,7 +32,10 @@ class ProductRepositoryImpl @Inject constructor(
 
     override suspend fun addProduct(product: Product, imageUri: Uri?): Long =
         withContext(Dispatchers.IO) {
-            val imagePath = imageUri?.let { imageStore.saveFromUri(it) }
+            val imagePath = imageUri?.let { uri ->
+                imageStore.saveFromUri(uri)
+                    ?: error("Impossible d'enregistrer l'image")
+            }
             productDao.insert(product.toEntity(imagePath = imagePath))
         }
 
@@ -51,12 +54,9 @@ class ProductRepositoryImpl @Inject constructor(
             }
             newImageUri != null -> {
                 val saved = imageStore.saveFromUri(newImageUri)
-                if (saved != null) {
-                    imageStore.deleteIfExists(existing.imagePath)
-                    saved
-                } else {
-                    existing.imagePath
-                }
+                    ?: error("Impossible d'enregistrer l'image")
+                imageStore.deleteIfExists(existing.imagePath)
+                saved
             }
             else -> existing.imagePath
         }

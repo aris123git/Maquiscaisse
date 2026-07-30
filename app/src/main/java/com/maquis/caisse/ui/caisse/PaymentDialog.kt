@@ -6,10 +6,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -22,7 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.maquis.caisse.common.MoneyFormat
+import com.maquis.caisse.core.Constants
 import com.maquis.caisse.domain.model.PaymentMode
+import com.maquis.caisse.domain.payment.PaymentCalculator
 import com.maquis.caisse.ui.components.NumericKeypad
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -34,100 +36,101 @@ fun PaymentDialog(
     onSelectMode: (PaymentMode) -> Unit,
     onSelectField: (PaymentField) -> Unit,
     onInputChange: (String) -> Unit,
-    currentInput: String,
     onConfirm: () -> Unit,
 ) {
-    val changePreview = when (payment.mode) {
-        PaymentMode.CASH -> {
-            val tendered = payment.amountTendered.toLongOrNull() ?: 0L
-            (tendered - total).coerceAtLeast(0L)
-        }
-        PaymentMode.MIXED -> {
-            val tendered = payment.amountTendered.toLongOrNull() ?: 0L
-            val cash = payment.cashAmount.toLongOrNull() ?: 0L
-            if (tendered > 0) (tendered - cash).coerceAtLeast(0L) else 0L
-        }
-        else -> 0L
-    }
+    val input = payment.toPaymentInput()
+    val changePreview = PaymentCalculator.previewChange(total, input)
+    val canConfirm = !payment.isSaving &&
+        PaymentCalculator.validate(total, input).isSuccess
 
     Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        onDismissRequest = { if (!payment.isSaving) onDismiss() },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = true,
+        ),
     ) {
         Surface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(8.dp),
+                    .verticalScroll(rememberScrollState()),
             ) {
-                Text(
-                    text = "Paiement",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-                Text(
-                    text = "Total : ${MoneyFormat.format(total)}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-
-                FlowRow(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                 ) {
-                    PaymentMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = payment.mode == mode,
-                            onClick = { onSelectMode(mode) },
-                            label = { Text(mode.label) },
-                        )
-                    }
-                }
+                    Text(
+                        text = "Paiement",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    Text(
+                        text = "Total : ${MoneyFormat.format(total)}",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
 
-                when (payment.mode) {
-                    PaymentMode.CASH -> {
-                        Text(
-                            text = "Montant reçu → monnaie : ${MoneyFormat.format(changePreview)}",
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
+                    FlowRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        PaymentMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = payment.mode == mode,
+                                onClick = { if (!payment.isSaving) onSelectMode(mode) },
+                                label = { Text(mode.label) },
+                                enabled = !payment.isSaving,
+                            )
+                        }
                     }
-                    PaymentMode.MIXED -> {
-                        MixedFields(
-                            payment = payment,
-                            onSelectField = onSelectField,
-                        )
-                        if (changePreview > 0) {
+
+                    when (payment.mode) {
+                        PaymentMode.CASH -> {
                             Text(
-                                text = "Monnaie espèces : ${MoneyFormat.format(changePreview)}",
+                                text = "Monnaie : ${MoneyFormat.format(changePreview)}",
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                        }
+                        PaymentMode.MIXED -> {
+                            MixedFields(
+                                payment = payment,
+                                enabled = !payment.isSaving,
+                                onSelectField = onSelectField,
+                            )
+                            if (changePreview > 0) {
+                                Text(
+                                    text = "Monnaie espèces : ${MoneyFormat.format(changePreview)}",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                            }
+                        }
+                        PaymentMode.MOBILE_MONEY,
+                        PaymentMode.VOUCHER,
+                        PaymentMode.DEBT,
+                        -> {
+                            Text(
+                                text = "Confirmer ${payment.mode.label} pour ${MoneyFormat.format(total)}",
                                 style = MaterialTheme.typography.bodyLarge,
                                 modifier = Modifier.padding(horizontal = 16.dp),
                             )
                         }
                     }
-                    PaymentMode.MOBILE_MONEY,
-                    PaymentMode.VOUCHER,
-                    PaymentMode.DEBT,
-                    -> {
+
+                    payment.errorMessage?.let { msg ->
                         Text(
-                            text = "Confirmer ${payment.mode.label} pour ${MoneyFormat.format(total)}",
+                            text = msg,
+                            color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(horizontal = 16.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                         )
                     }
-                }
-
-                payment.errorMessage?.let { msg ->
-                    Text(
-                        text = msg,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
                 }
 
                 val needsKeypad = payment.mode == PaymentMode.CASH ||
@@ -135,19 +138,19 @@ fun PaymentDialog(
 
                 if (needsKeypad) {
                     NumericKeypad(
-                        value = currentInput,
+                        value = payment.activeInput,
                         onValueChange = onInputChange,
                         onConfirm = onConfirm,
                         title = fieldLabel(payment),
-                        maxDigits = 9,
+                        maxDigits = Constants.MAX_MONEY_DIGITS,
                         allowLeadingZero = false,
                         confirmLabel = if (payment.isSaving) "…" else "Encaisser",
-                        confirmEnabled = !payment.isSaving,
+                        confirmEnabled = canConfirm,
                     )
                 } else {
                     Button(
                         onClick = onConfirm,
-                        enabled = !payment.isSaving,
+                        enabled = canConfirm,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 12.dp)
@@ -162,6 +165,7 @@ fun PaymentDialog(
 
                 TextButton(
                     onClick = onDismiss,
+                    enabled = !payment.isSaving,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 8.dp),
@@ -176,6 +180,7 @@ fun PaymentDialog(
 @Composable
 private fun MixedFields(
     payment: PaymentFormState,
+    enabled: Boolean,
     onSelectField: (PaymentField) -> Unit,
 ) {
     Column(modifier = Modifier.padding(horizontal = 12.dp)) {
@@ -183,30 +188,35 @@ private fun MixedFields(
             label = "Espèces",
             value = payment.cashAmount,
             selected = payment.activeField == PaymentField.CASH,
+            enabled = enabled,
             onClick = { onSelectField(PaymentField.CASH) },
         )
         MixedFieldChip(
             label = "Mobile Money",
             value = payment.mobileMoneyAmount,
             selected = payment.activeField == PaymentField.MOBILE_MONEY,
+            enabled = enabled,
             onClick = { onSelectField(PaymentField.MOBILE_MONEY) },
         )
         MixedFieldChip(
             label = "Avoir",
             value = payment.voucherAmount,
             selected = payment.activeField == PaymentField.VOUCHER,
+            enabled = enabled,
             onClick = { onSelectField(PaymentField.VOUCHER) },
         )
         MixedFieldChip(
             label = "Dette",
             value = payment.debtAmount,
             selected = payment.activeField == PaymentField.DEBT,
+            enabled = enabled,
             onClick = { onSelectField(PaymentField.DEBT) },
         )
         MixedFieldChip(
-            label = "Espèces tendues (monnaie)",
-            value = payment.amountTendered,
+            label = "Espèces tendues (optionnel)",
+            value = if (payment.tenderedExplicit) payment.amountTendered else "—",
             selected = payment.activeField == PaymentField.TENDERED,
+            enabled = enabled,
             onClick = { onSelectField(PaymentField.TENDERED) },
         )
     }
@@ -217,6 +227,7 @@ private fun MixedFieldChip(
     label: String,
     value: String,
     selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     Row(
@@ -228,9 +239,15 @@ private fun MixedFieldChip(
         FilterChip(
             selected = selected,
             onClick = onClick,
+            enabled = enabled,
             label = {
+                val amount = value.toLongOrNull()
                 Text(
-                    "$label : ${MoneyFormat.format(value.toLongOrNull() ?: 0L)}",
+                    if (amount != null) {
+                        "$label : ${MoneyFormat.format(amount)}"
+                    } else {
+                        "$label : $value"
+                    },
                 )
             },
         )

@@ -127,7 +127,9 @@ fun NumericKeypad(
 
         Button(
             onClick = onConfirm,
-            enabled = confirmEnabled && value.isNotEmpty(),
+            // [confirmEnabled] est la source de vérité (le caller peut autoriser
+            // une confirmation même si le champ actif est vide, ex. paiement mixte).
+            enabled = confirmEnabled,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),

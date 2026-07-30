@@ -10,6 +10,7 @@ import com.maquis.caisse.domain.usecase.ObserveProductsUseCase
 import com.maquis.caisse.domain.usecase.ResolveProductImageUseCase
 import com.maquis.caisse.domain.usecase.UpdateProductUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -132,8 +133,8 @@ class ProduitsViewModel @Inject constructor(
         val purchasePrice = form.purchasePrice.toLongOrNull() ?: 0L
         val stock = form.stock.toIntOrNull()
         val alert = form.alertThreshold.toIntOrNull()
-        if (salePrice == null || salePrice < 0) {
-            updateForm { it.copy(errorMessage = "Prix de vente invalide") }
+        if (salePrice == null || salePrice <= 0) {
+            updateForm { it.copy(errorMessage = "Prix de vente invalide (doit être > 0)") }
             return
         }
         if (purchasePrice < 0) {
@@ -181,6 +182,8 @@ class ProduitsViewModel @Inject constructor(
                         it.copy(form = null, snackbarMessage = "Produit mis à jour")
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { state ->
                     state.copy(
@@ -202,6 +205,8 @@ class ProduitsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(form = null, snackbarMessage = "Produit supprimé")
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { state ->
                     state.copy(

@@ -4,15 +4,19 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.maquis.caisse.common.CartJson
+import com.maquis.caisse.domain.cart.CartOperations
 import com.maquis.caisse.domain.model.CartLine
 import com.maquis.caisse.domain.model.CompleteSaleRequest
+import com.maquis.caisse.domain.model.PaymentInput
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.domain.model.Product
 import com.maquis.caisse.domain.model.Sale
+import com.maquis.caisse.domain.payment.PaymentCalculator
 import com.maquis.caisse.domain.usecase.CompleteSaleUseCase
 import com.maquis.caisse.domain.usecase.ObserveActiveProductsUseCase
 import com.maquis.caisse.domain.usecase.ResolveProductImageUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +25,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 /** Overlay pavé numérique : ajout ou édition d'une ligne panier. */
@@ -30,7 +35,6 @@ data class QuantityOverlay(
     val unitPrice: Long,
     val imagePath: String?,
     val quantityInput: String,
-    /** true si on édite une ligne déjà au panier (long-press). */
     val isEditing: Boolean,
 )
 
@@ -41,11 +45,34 @@ data class PaymentFormState(
     val mobileMoneyAmount: String = "",
     val voucherAmount: String = "",
     val debtAmount: String = "",
-    /** Quel champ mixte / espèces reçoit le pavé. */
+    /** true si le commerçant a touché le champ « espèces tendues » en mixte. */
+    val tenderedExplicit: Boolean = false,
     val activeField: PaymentField = PaymentField.TENDERED,
     val errorMessage: String? = null,
     val isSaving: Boolean = false,
-)
+) {
+    val activeInput: String
+        get() = when (activeField) {
+            PaymentField.TENDERED -> amountTendered
+            PaymentField.CASH -> cashAmount
+            PaymentField.MOBILE_MONEY -> mobileMoneyAmount
+            PaymentField.VOUCHER -> voucherAmount
+            PaymentField.DEBT -> debtAmount
+        }
+
+    fun toPaymentInput(): PaymentInput = PaymentInput(
+        mode = mode,
+        amountTendered = when {
+            mode == PaymentMode.CASH -> amountTendered.toLongOrNull()
+            mode == PaymentMode.MIXED && tenderedExplicit -> amountTendered.toLongOrNull()
+            else -> null
+        },
+        cashAmount = cashAmount.toLongOrNull() ?: 0L,
+        mobileMoneyAmount = mobileMoneyAmount.toLongOrNull() ?: 0L,
+        voucherAmount = voucherAmount.toLongOrNull() ?: 0L,
+        debtAmount = debtAmount.toLongOrNull() ?: 0L,
+    )
+}
 
 enum class PaymentField {
     TENDERED,
@@ -64,8 +91,7 @@ data class CaisseUiState(
     val completedSale: Sale? = null,
     val snackbarMessage: String? = null,
 ) {
-    val cartTotal: Long get() = cart.sumOf { it.lineTotal }
-    val cartItemCount: Int get() = cart.sumOf { it.quantity }
+    val cartTotal: Long get() = CartOperations.total(cart)
 }
 
 @HiltViewModel
@@ -75,6 +101,8 @@ class CaisseViewModel @Inject constructor(
     private val completeSale: CompleteSaleUseCase,
     private val resolveImage: ResolveProductImageUseCase,
 ) : ViewModel() {
+
+    private val saleInFlight = AtomicBoolean(false)
 
     private val productsFlow = observeActiveProducts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -95,6 +123,12 @@ class CaisseViewModel @Inject constructor(
     fun imageFile(relativePath: String?): File? = resolveImage(relativePath)
 
     fun onProductTap(product: Product) {
+        if (product.salePrice <= 0L) {
+            _uiState.update {
+                it.copy(snackbarMessage = "Prix de vente invalide pour ${product.name}")
+            }
+            return
+        }
         _uiState.update {
             it.copy(
                 quantityOverlay = QuantityOverlay(
@@ -139,67 +173,32 @@ class CaisseViewModel @Inject constructor(
         val overlay = _uiState.value.quantityOverlay ?: return
         val qty = overlay.quantityInput.toIntOrNull() ?: return
         if (qty <= 0) {
-            if (overlay.isEditing) {
-                removeFromCart(overlay.productId)
-            }
+            if (overlay.isEditing) setCart(CartOperations.remove(_uiState.value.cart, overlay.productId))
             dismissQuantityOverlay()
             return
         }
-        upsertCartLine(
-            CartLine(
-                productId = overlay.productId,
-                productName = overlay.productName,
-                unitPrice = overlay.unitPrice,
-                quantity = qty,
-                imagePath = overlay.imagePath,
-            ),
-            replace = overlay.isEditing,
+        val line = CartLine(
+            productId = overlay.productId,
+            productName = overlay.productName,
+            unitPrice = overlay.unitPrice,
+            quantity = qty,
+            imagePath = overlay.imagePath,
         )
+        setCart(CartOperations.upsert(_uiState.value.cart, line, replace = overlay.isEditing))
         dismissQuantityOverlay()
     }
 
     fun deleteOverlayLine() {
         val overlay = _uiState.value.quantityOverlay ?: return
         if (overlay.isEditing) {
-            removeFromCart(overlay.productId)
+            setCart(CartOperations.remove(_uiState.value.cart, overlay.productId))
         }
         dismissQuantityOverlay()
     }
 
-    /**
-     * @param replace si true (édition), remplace la quantité ; sinon additionne (doublons).
-     */
-    private fun upsertCartLine(line: CartLine, replace: Boolean) {
-        _uiState.update { state ->
-            val existing = state.cart.find { it.productId == line.productId }
-            val newCart = when {
-                existing == null -> state.cart + line
-                replace -> state.cart.map {
-                    if (it.productId == line.productId) line else it
-                }
-                else -> state.cart.map {
-                    if (it.productId == line.productId) {
-                        it.copy(quantity = it.quantity + line.quantity)
-                    } else {
-                        it
-                    }
-                }
-            }
-            persistCart(newCart)
-            state.copy(cart = newCart)
-        }
-    }
-
-    private fun removeFromCart(productId: Long) {
-        _uiState.update { state ->
-            val newCart = state.cart.filterNot { it.productId == productId }
-            persistCart(newCart)
-            state.copy(cart = newCart)
-        }
-    }
-
-    private fun persistCart(cart: List<CartLine>) {
+    private fun setCart(cart: List<CartLine>) {
         savedStateHandle[KEY_CART] = CartJson.encode(cart)
+        _uiState.update { it.copy(cart = cart) }
     }
 
     fun openPayment() {
@@ -208,12 +207,17 @@ class CaisseViewModel @Inject constructor(
             _uiState.update { it.copy(snackbarMessage = "Panier vide") }
             return
         }
+        if (state.cartTotal <= 0L) {
+            _uiState.update { it.copy(snackbarMessage = "Montant total invalide") }
+            return
+        }
         _uiState.update {
             it.copy(
                 showPayment = true,
                 payment = PaymentFormState(
                     mode = PaymentMode.CASH,
                     amountTendered = it.cartTotal.toString(),
+                    tenderedExplicit = true,
                     activeField = PaymentField.TENDERED,
                 ),
             )
@@ -221,36 +225,46 @@ class CaisseViewModel @Inject constructor(
     }
 
     fun dismissPayment() {
+        if (_uiState.value.payment.isSaving) return
         _uiState.update {
             it.copy(showPayment = false, payment = PaymentFormState())
         }
     }
 
     fun selectPaymentMode(mode: PaymentMode) {
+        val total = _uiState.value.cartTotal.toString()
         _uiState.update { state ->
-            val total = state.cartTotal.toString()
             state.copy(
-                payment = PaymentFormState(
-                    mode = mode,
-                    amountTendered = if (mode == PaymentMode.CASH || mode == PaymentMode.MIXED) {
-                        total
-                    } else {
-                        ""
-                    },
-                    cashAmount = if (mode == PaymentMode.MIXED) total else "",
-                    activeField = when (mode) {
-                        PaymentMode.CASH -> PaymentField.TENDERED
-                        PaymentMode.MIXED -> PaymentField.CASH
-                        else -> PaymentField.TENDERED
-                    },
-                ),
+                payment = when (mode) {
+                    PaymentMode.CASH -> PaymentFormState(
+                        mode = mode,
+                        amountTendered = total,
+                        tenderedExplicit = true,
+                        activeField = PaymentField.TENDERED,
+                    )
+                    PaymentMode.MIXED -> PaymentFormState(
+                        mode = mode,
+                        cashAmount = total,
+                        amountTendered = "",
+                        tenderedExplicit = false,
+                        activeField = PaymentField.CASH,
+                    )
+                    else -> PaymentFormState(mode = mode)
+                },
             )
         }
     }
 
     fun selectPaymentField(field: PaymentField) {
         _uiState.update { state ->
-            state.copy(payment = state.payment.copy(activeField = field, errorMessage = null))
+            state.copy(
+                payment = state.payment.copy(
+                    activeField = field,
+                    errorMessage = null,
+                    tenderedExplicit = state.payment.tenderedExplicit ||
+                        field == PaymentField.TENDERED,
+                ),
+            )
         }
     }
 
@@ -258,7 +272,11 @@ class CaisseViewModel @Inject constructor(
         _uiState.update { state ->
             val p = state.payment
             val updated = when (p.activeField) {
-                PaymentField.TENDERED -> p.copy(amountTendered = value, errorMessage = null)
+                PaymentField.TENDERED -> p.copy(
+                    amountTendered = value,
+                    tenderedExplicit = true,
+                    errorMessage = null,
+                )
                 PaymentField.CASH -> p.copy(cashAmount = value, errorMessage = null)
                 PaymentField.MOBILE_MONEY -> p.copy(mobileMoneyAmount = value, errorMessage = null)
                 PaymentField.VOUCHER -> p.copy(voucherAmount = value, errorMessage = null)
@@ -268,38 +286,37 @@ class CaisseViewModel @Inject constructor(
         }
     }
 
-    fun currentPaymentInput(): String {
-        val p = _uiState.value.payment
-        return when (p.activeField) {
-            PaymentField.TENDERED -> p.amountTendered
-            PaymentField.CASH -> p.cashAmount
-            PaymentField.MOBILE_MONEY -> p.mobileMoneyAmount
-            PaymentField.VOUCHER -> p.voucherAmount
-            PaymentField.DEBT -> p.debtAmount
-        }
+    fun changePreview(): Long {
+        val state = _uiState.value
+        return PaymentCalculator.previewChange(state.cartTotal, state.payment.toPaymentInput())
+    }
+
+    fun canConfirmPayment(): Boolean {
+        val state = _uiState.value
+        if (state.payment.isSaving) return false
+        return PaymentCalculator.validate(state.cartTotal, state.payment.toPaymentInput()).isSuccess
     }
 
     fun confirmPayment() {
+        if (!saleInFlight.compareAndSet(false, true)) return
         val state = _uiState.value
-        val payment = state.payment
-        if (payment.isSaving) return
+        if (!state.showPayment) {
+            saleInFlight.set(false)
+            return
+        }
+
+        _uiState.update {
+            it.copy(payment = it.payment.copy(isSaving = true, errorMessage = null))
+        }
 
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(payment = it.payment.copy(isSaving = true, errorMessage = null))
-            }
             try {
                 val request = CompleteSaleRequest(
                     lines = state.cart,
-                    paymentMode = payment.mode,
-                    cashAmount = payment.cashAmount.toLongOrNull() ?: 0L,
-                    mobileMoneyAmount = payment.mobileMoneyAmount.toLongOrNull() ?: 0L,
-                    voucherAmount = payment.voucherAmount.toLongOrNull() ?: 0L,
-                    debtAmount = payment.debtAmount.toLongOrNull() ?: 0L,
-                    amountTendered = payment.amountTendered.toLongOrNull() ?: 0L,
+                    payment = state.payment.toPaymentInput(),
                 )
                 val sale = completeSale(request)
-                persistCart(emptyList())
+                savedStateHandle[KEY_CART] = CartJson.encode(emptyList())
                 _uiState.update {
                     it.copy(
                         cart = emptyList(),
@@ -309,6 +326,8 @@ class CaisseViewModel @Inject constructor(
                         quantityOverlay = null,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -318,6 +337,8 @@ class CaisseViewModel @Inject constructor(
                         ),
                     )
                 }
+            } finally {
+                saleInFlight.set(false)
             }
         }
     }

@@ -34,8 +34,7 @@ import com.maquis.caisse.ui.components.NumericKeypad
 import com.maquis.caisse.ui.produits.ProductTile
 
 /**
- * Écran Caisse (Sprint 2) : grille produits → pavé quantité → panier permanent
- * → paiement → ticket.
+ * Écran Caisse (Sprint 2) : grille → quantité → panier → paiement → ticket.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,9 +51,7 @@ fun CaisseScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("Caisse") })
-        },
+        topBar = { TopAppBar(title = { Text("Caisse") }) },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(
@@ -105,7 +102,10 @@ fun CaisseScreen(
     state.quantityOverlay?.let { overlay ->
         Dialog(
             onDismissRequest = viewModel::dismissQuantityOverlay,
-            properties = DialogProperties(usePlatformDefaultWidth = false),
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = true,
+            ),
         ) {
             Surface(modifier = Modifier.fillMaxWidth()) {
                 NumericKeypad(
@@ -116,6 +116,7 @@ fun CaisseScreen(
                     subtitle = MoneyFormat.format(overlay.unitPrice),
                     maxDigits = Constants.MAX_QUANTITY_DIGITS,
                     confirmLabel = "OK",
+                    confirmEnabled = overlay.quantityInput.isNotEmpty(),
                     onDeleteLine = if (overlay.isEditing) {
                         { viewModel.deleteOverlayLine() }
                     } else {
@@ -134,7 +135,6 @@ fun CaisseScreen(
             onSelectMode = viewModel::selectPaymentMode,
             onSelectField = viewModel::selectPaymentField,
             onInputChange = viewModel::onPaymentDigitInput,
-            currentInput = viewModel.currentPaymentInput(),
             onConfirm = viewModel::confirmPayment,
         )
     }

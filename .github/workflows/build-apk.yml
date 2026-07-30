@@ -25,8 +25,8 @@ jobs:
       - name: Rendre gradlew exécutable
         run: chmod +x ./gradlew
 
-      - name: Compiler l'APK debug
-        run: ./gradlew assembleDebug
+      - name: Tests unitaires + APK debug
+        run: ./gradlew testDebugUnitTest assembleDebug
 
       - name: Publier l'APK comme fichier téléchargeable
         uses: actions/upload-artifact@v4

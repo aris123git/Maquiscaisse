@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.Flow
 interface ProductRepository {
     fun observeProducts(): Flow<List<Product>>
 
+    fun observeActiveProducts(): Flow<List<Product>>
+
     suspend fun getProduct(id: Long): Product?
 
     /**

@@ -13,9 +13,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Test de migration Room 1→2 (création table products).
- * Crée une base v1 vide (Sprint 0) sans dépendre du fichier de schéma exporté,
- * puis ouvre AppDatabase v2 avec MIGRATION_1_2.
+ * Tests de migrations Room (1→2 produits, 2→3 ventes).
+ * Crée des bases intermédiaires sans dépendre des JSON de schéma exportés.
  */
 @RunWith(AndroidJUnit4::class)
 class Migration1To2InstrumentedTest {
@@ -27,15 +26,60 @@ class Migration1To2InstrumentedTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         context.deleteDatabase(testDb)
 
-        // Simule la base Sprint 0 (version 1, aucune table métier).
+        openRawDatabase(context, testDb, version = 1) { /* vide Sprint 0 */ }
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, testDb)
+            .addMigrations(Migrations.MIGRATION_1_2, Migrations.MIGRATION_2_3)
+            .build()
+
+        try {
+            db.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(3, cursor.getInt(0))
+            }
+            assertTableExists(db, "products")
+            assertTableExists(db, "sales")
+            assertTableExists(db, "sale_items")
+        } finally {
+            db.close()
+            context.deleteDatabase(testDb)
+        }
+    }
+
+    @Test
+    fun migrate2To3_createsSalesTables() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        context.deleteDatabase(testDb)
+
+        openRawDatabase(context, testDb, version = 2) { db ->
+            Migrations.MIGRATION_1_2.migrate(db)
+        }
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, testDb)
+            .addMigrations(Migrations.MIGRATION_2_3)
+            .build()
+
+        try {
+            assertTableExists(db, "sales")
+            assertTableExists(db, "sale_items")
+        } finally {
+            db.close()
+            context.deleteDatabase(testDb)
+        }
+    }
+
+    private fun openRawDatabase(
+        context: android.content.Context,
+        name: String,
+        version: Int,
+        onCreate: (SupportSQLiteDatabase) -> Unit,
+    ) {
         val helper = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(context)
-                .name(testDb)
+                .name(name)
                 .callback(
-                    object : SupportSQLiteOpenHelper.Callback(1) {
-                        override fun onCreate(db: SupportSQLiteDatabase) {
-                            // Schéma vide volontairement.
-                        }
+                    object : SupportSQLiteOpenHelper.Callback(version) {
+                        override fun onCreate(db: SupportSQLiteDatabase) = onCreate(db)
 
                         override fun onUpgrade(
                             db: SupportSQLiteDatabase,
@@ -47,26 +91,15 @@ class Migration1To2InstrumentedTest {
                 .build(),
         )
         helper.writableDatabase.close()
+    }
 
-        val db = Room.databaseBuilder(context, AppDatabase::class.java, testDb)
-            .addMigrations(Migrations.MIGRATION_1_2)
-            .build()
-
-        try {
-            db.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
-                cursor.moveToFirst()
-                assertEquals(2, cursor.getInt(0))
-            }
-            db.openHelper.writableDatabase.query(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='products'",
-            ).use { cursor ->
-                assertTrue(cursor.moveToFirst())
-                assertEquals("products", cursor.getString(0))
-            }
-            assertTrue(db.productDao().observeAll() != null)
-        } finally {
-            db.close()
-            context.deleteDatabase(testDb)
+    private fun assertTableExists(db: AppDatabase, table: String) {
+        db.openHelper.writableDatabase.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            arrayOf(table),
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(table, cursor.getString(0))
         }
     }
 }

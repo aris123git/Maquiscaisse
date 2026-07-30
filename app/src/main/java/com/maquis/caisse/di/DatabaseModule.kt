@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.maquis.caisse.data.local.AppDatabase
 import com.maquis.caisse.data.local.dao.ProductDao
+import com.maquis.caisse.data.local.dao.SaleDao
 import com.maquis.caisse.data.local.migrations.Migrations
 import dagger.Module
 import dagger.Provides
@@ -26,10 +27,16 @@ object DatabaseModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
         return Room.databaseBuilder(context, AppDatabase::class.java, DATABASE_NAME)
-            .addMigrations(Migrations.MIGRATION_1_2)
+            .addMigrations(
+                Migrations.MIGRATION_1_2,
+                Migrations.MIGRATION_2_3,
+            )
             .build()
     }
 
     @Provides
     fun provideProductDao(db: AppDatabase): ProductDao = db.productDao()
+
+    @Provides
+    fun provideSaleDao(db: AppDatabase): SaleDao = db.saleDao()
 }

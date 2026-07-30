@@ -23,6 +23,9 @@ class ProductRepositoryImpl @Inject constructor(
     override fun observeProducts(): Flow<List<Product>> =
         productDao.observeAll().map { list -> list.map { it.toDomain() } }
 
+    override fun observeActiveProducts(): Flow<List<Product>> =
+        productDao.observeActive().map { list -> list.map { it.toDomain() } }
+
     override suspend fun getProduct(id: Long): Product? = withContext(Dispatchers.IO) {
         productDao.getById(id)?.toDomain()
     }

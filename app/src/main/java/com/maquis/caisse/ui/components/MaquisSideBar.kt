@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,21 +28,53 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
+import com.maquis.caisse.core.SessionManager
+import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.navigation.Routes
 import com.maquis.caisse.ui.theme.GestionBlue
 import com.maquis.caisse.ui.theme.SidebarAccent
 import com.maquis.caisse.ui.theme.SidebarEnd
 import com.maquis.caisse.ui.theme.SidebarStart
 import com.maquis.caisse.ui.theme.SidebarText
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 
-private data class NavItem(val route: String, val label: String)
+private data class NavItem(
+    val route: String,
+    val label: String,
+    val adminOnly: Boolean = false,
+)
+
+@HiltViewModel
+class SideBarViewModel @Inject constructor(
+    private val session: SessionManager,
+) : ViewModel() {
+    val currentUser = session.currentUser
+
+    fun isAdmin(): Boolean {
+        val user = session.userOrNull() ?: return false
+        return user.role == "ADMIN" || user.can(Permissions.MANAGE_USERS)
+    }
+
+    fun logout() {
+        session.logout()
+    }
+}
 
 @Composable
-fun MaquisSideBar(navController: NavHostController) {
+fun MaquisSideBar(
+    navController: NavHostController,
+    viewModel: SideBarViewModel = hiltViewModel(),
+) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val isAdmin = viewModel.isAdmin()
 
     val items = listOf(
         NavItem(Routes.CAISSE, "Caisse"),
@@ -54,9 +87,9 @@ fun MaquisSideBar(navController: NavHostController) {
         NavItem(Routes.TABLES, "Tables"),
         NavItem(Routes.STOCK, "Stock"),
         NavItem(Routes.RAPPORTS, "Rapports"),
-        NavItem(Routes.UTILISATEURS, "Utilisateurs"),
+        NavItem(Routes.UTILISATEURS, "Utilisateurs", adminOnly = true),
         NavItem(Routes.PARAMETRES, "Paramètres"),
-    )
+    ).filter { !it.adminOnly || isAdmin }
 
     Column(
         modifier = Modifier
@@ -76,9 +109,15 @@ fun MaquisSideBar(navController: NavHostController) {
             color = Color.White,
         )
         Text(
-            "Caisse vivante",
+            currentUser?.name ?: "Session",
             style = MaterialTheme.typography.labelLarge,
             color = SidebarAccent,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        Text(
+            currentUser?.role ?: "",
+            style = MaterialTheme.typography.labelLarge,
+            color = SidebarText,
             modifier = Modifier.padding(bottom = 16.dp),
         )
         items.forEach { item ->
@@ -122,6 +161,17 @@ fun MaquisSideBar(navController: NavHostController) {
             Spacer(modifier = Modifier.height(4.dp))
         }
         Spacer(modifier = Modifier.weight(1f))
+        OutlinedButton(
+            onClick = { viewModel.logout() },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+        ) {
+            Text("Déconnexion")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             "Offline · local",
             style = MaterialTheme.typography.labelLarge,

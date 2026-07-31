@@ -1,6 +1,7 @@
 package com.maquis.caisse.ui.users
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,7 +15,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -44,7 +45,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -66,11 +66,12 @@ class UsersViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    fun canManage(): Boolean = session.can(Permissions.MANAGE_USERS)
+    fun isAdmin(): Boolean = session.userOrNull()?.role == "ADMIN" ||
+        session.can(Permissions.MANAGE_USERS)
 
     fun add(name: String, pin: String, roleOption: UserRoleOption) = viewModelScope.launch {
-        if (!session.can(Permissions.MANAGE_USERS)) {
-            _message.value = "Seul un administrateur peut créer un compte"
+        if (!isAdmin()) {
+            _message.value = "Accès réservé à l'administrateur"
             return@launch
         }
         try {
@@ -95,8 +96,8 @@ class UsersViewModel @Inject constructor(
     }
 
     fun delete(user: AppUser) = viewModelScope.launch {
-        if (!session.can(Permissions.MANAGE_USERS)) {
-            _message.value = "Permission insuffisante"
+        if (!isAdmin()) {
+            _message.value = "Accès réservé à l'administrateur"
             return@launch
         }
         val current = session.userOrNull()
@@ -113,31 +114,20 @@ class UsersViewModel @Inject constructor(
     }
 
     fun changePin(userId: Long, newPin: String, confirm: String) = viewModelScope.launch {
+        if (!isAdmin()) {
+            _message.value = "Accès réservé à l'administrateur"
+            return@launch
+        }
         if (newPin != confirm) {
             _message.value = "Les deux codes ne correspondent pas"
             return@launch
         }
-        val current = session.userOrNull() ?: return@launch
-        val isSelf = current.id == userId
-        if (!isSelf && !session.can(Permissions.MANAGE_USERS)) {
-            _message.value = "Seul un admin peut modifier le code d'un autre"
-            return@launch
-        }
         try {
             userRepository.changePin(userId, newPin)
-            _message.value = if (isSelf) "Ton code a été modifié" else "Code utilisateur mis à jour"
+            _message.value = "Code mis à jour"
         } catch (e: Exception) {
             _message.value = e.message ?: "Échec modification du code"
         }
-    }
-
-    fun switchUser(user: AppUser) {
-        session.setUser(user)
-        _message.update { "Session : ${user.name}" }
-    }
-
-    fun logout() {
-        session.logout()
     }
 }
 
@@ -151,8 +141,17 @@ fun UsersScreen(viewModel: UsersViewModel = hiltViewModel()) {
     var role by remember { mutableStateOf(UserRoleOption.SERVEUSE) }
     var toDelete by remember { mutableStateOf<AppUser?>(null) }
     var pinTarget by remember { mutableStateOf<AppUser?>(null) }
-    var changeOwnPin by remember { mutableStateOf(false) }
-    val canManage = viewModel.canManage()
+
+    if (!viewModel.isAdmin()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                "Réservé à l'administrateur.",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -162,68 +161,57 @@ fun UsersScreen(viewModel: UsersViewModel = hiltViewModel()) {
     ) {
         Text("Utilisateurs", style = MaterialTheme.typography.headlineMedium, color = GestionBlue)
         Text(
-            "Session : ${current?.name ?: "—"} (${current?.role ?: "—"})",
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            "Les comptes sont créés par l'administrateur. Les codes PIN restent masqués.",
+            "Admin : ${current?.name ?: "—"} — gestion des comptes uniquement. " +
+                "Pour changer de session : se déconnecter, puis saisir le code du compte.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        OutlinedButton(
-            onClick = { changeOwnPin = true },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            shape = RoundedCornerShape(14.dp),
-        ) { Text("Changer mon code PIN") }
-
-        if (canManage) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color.White.copy(alpha = 0.9f),
-                tonalElevation = 1.dp,
-                modifier = Modifier.fillMaxWidth(),
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color.White.copy(alpha = 0.9f),
+            tonalElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("Créer un compte", style = MaterialTheme.typography.titleMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = name,
-                            onValueChange = { name = it },
-                            label = { Text("Nom") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                        )
-                        OutlinedTextField(
-                            value = pin,
-                            onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6) },
-                            label = { Text("PIN initial") },
-                            visualTransformation = PasswordVisualTransformation(),
-                            modifier = Modifier.weight(0.7f),
-                            singleLine = true,
-                        )
-                    }
-                    DropdownField(
-                        label = "Rôle",
-                        selected = role,
-                        options = UserRoleOption.entries,
-                        optionLabel = { it.label },
-                        onSelect = { if (it != null) role = it },
+                Text("Créer un compte", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Nom") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
                     )
-                    Button(
-                        onClick = {
-                            viewModel.add(name, pin, role)
-                            name = ""
-                            pin = ""
-                        },
-                        enabled = name.isNotBlank() && pin.length >= 4,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                    ) { Text("Créer le compte") }
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6) },
+                        label = { Text("PIN initial") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.weight(0.7f),
+                        singleLine = true,
+                    )
                 }
+                DropdownField(
+                    label = "Rôle",
+                    selected = role,
+                    options = UserRoleOption.entries,
+                    optionLabel = { it.label },
+                    onSelect = { if (it != null) role = it },
+                )
+                Button(
+                    onClick = {
+                        viewModel.add(name, pin, role)
+                        name = ""
+                        pin = ""
+                    },
+                    enabled = name.isNotBlank() && pin.length >= 4,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                ) { Text("Créer le compte") }
             }
         }
 
@@ -243,14 +231,12 @@ fun UsersScreen(viewModel: UsersViewModel = hiltViewModel()) {
                             "${user.name} · ${user.role}" +
                                 if (user.isWaitress) " · serveuse" else "",
                         )
+                        if (user.id == current?.id) {
+                            Text("Connecté", color = GestionBlue, style = MaterialTheme.typography.labelLarge)
+                        }
                     }
-                    OutlinedButton(onClick = { viewModel.switchUser(user) }) {
-                        Text(if (user.id == current?.id) "Actif" else "Utiliser")
-                    }
-                    if (canManage) {
-                        TextButton(onClick = { pinTarget = user }) { Text("Code") }
-                    }
-                    if (canManage && user.id != current?.id) {
+                    TextButton(onClick = { pinTarget = user }) { Text("Code") }
+                    if (user.id != current?.id) {
                         TextButton(onClick = { toDelete = user }) {
                             Text("Suppr.", color = MaterialTheme.colorScheme.error)
                         }
@@ -258,25 +244,6 @@ fun UsersScreen(viewModel: UsersViewModel = hiltViewModel()) {
                 }
                 HorizontalDivider()
             }
-        }
-
-        OutlinedButton(
-            onClick = { viewModel.logout() },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            shape = RoundedCornerShape(14.dp),
-        ) { Text("Se déconnecter") }
-    }
-
-    if (changeOwnPin) {
-        current?.let { me ->
-            PinChangeDialog(
-                title = "Changer mon code",
-                onDismiss = { changeOwnPin = false },
-                onConfirm = { a, b ->
-                    viewModel.changePin(me.id, a, b)
-                    changeOwnPin = false
-                },
-            )
         }
     }
 

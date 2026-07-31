@@ -37,10 +37,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.core.SettingsKeys
 import com.maquis.caisse.data.backup.BackupManager
 import com.maquis.caisse.data.print.EscPosPrinter
 import com.maquis.caisse.domain.repository.SettingsRepository
+import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.ui.common.DropdownField
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,11 +77,31 @@ class ParametresViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val printer: EscPosPrinter,
     private val backupManager: BackupManager,
+    private val userRepository: UserRepository,
+    private val session: SessionManager,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ParametresUiState())
     val ui: StateFlow<ParametresUiState> = _ui.asStateFlow()
 
     fun suggestedBackupName(): String = backupManager.suggestedFileName()
+
+    fun changeOwnPin(newPin: String, confirm: String) = viewModelScope.launch {
+        if (newPin != confirm) {
+            _ui.update { it.copy(message = "Les deux codes ne correspondent pas") }
+            return@launch
+        }
+        val me = session.userOrNull()
+        if (me == null) {
+            _ui.update { it.copy(message = "Non connecté") }
+            return@launch
+        }
+        try {
+            userRepository.changePin(me.id, newPin)
+            _ui.update { it.copy(message = "Ton code PIN a été modifié") }
+        } catch (e: Exception) {
+            _ui.update { it.copy(message = e.message ?: "Échec modification du code") }
+        }
+    }
 
     init {
         viewModelScope.launch { reload() }
@@ -184,6 +209,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
     var permissionsReady by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+    var changeOwnPin by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(BackupManager.MIME_ZIP),
@@ -224,6 +250,10 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text("Paramètres", style = MaterialTheme.typography.headlineMedium)
+        OutlinedButton(
+            onClick = { changeOwnPin = true },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        ) { Text("Changer mon code PIN") }
         OutlinedTextField(value = ui.shopName, onValueChange = { v -> viewModel.update { it.copy(shopName = v) } }, label = { Text("Nom du commerce") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         OutlinedTextField(value = ui.shopAddress, onValueChange = { v -> viewModel.update { it.copy(shopAddress = v) } }, label = { Text("Adresse") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         OutlinedTextField(value = ui.shopPhone, onValueChange = { v -> viewModel.update { it.copy(shopPhone = v) } }, label = { Text("Téléphone") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -310,6 +340,47 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(top = 8.dp),
         ) { Text("Enregistrer") }
         ui.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+    }
+
+    if (changeOwnPin) {
+        var pin by remember { mutableStateOf("") }
+        var confirm by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { changeOwnPin = false },
+            title = { Text("Changer mon code PIN") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6) },
+                        label = { Text("Nouveau code") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = confirm,
+                        onValueChange = { confirm = it.filter { c -> c.isDigit() }.take(6) },
+                        label = { Text("Confirmer") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.changeOwnPin(pin, confirm)
+                        changeOwnPin = false
+                    },
+                    enabled = pin.length >= 4 && confirm.length >= 4,
+                ) { Text("Valider") }
+            },
+            dismissButton = {
+                TextButton(onClick = { changeOwnPin = false }) { Text("Annuler") }
+            },
+        )
     }
 
     if (confirmRestore) {

@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -91,9 +92,16 @@ fun MaquisSideBar(
         NavItem(Routes.PARAMETRES, "Paramètres"),
     ).filter { !it.adminOnly || isAdmin }
 
+    val screenWidth = LocalConfiguration.current.screenWidthDp
+    val sidebarWidth = when {
+        screenWidth < 800 -> 148.dp
+        screenWidth < 1100 -> 172.dp
+        else -> 196.dp
+    }
+
     Column(
         modifier = Modifier
-            .width(196.dp)
+            .width(sidebarWidth)
             .fillMaxHeight()
             .background(
                 Brush.verticalGradient(

@@ -1,12 +1,17 @@
 package com.maquis.caisse.ui.commandes
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -39,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.common.MoneyFormat
+import com.maquis.caisse.domain.model.Order
+import com.maquis.caisse.domain.model.OrderLine
 import com.maquis.caisse.domain.model.PaymentMode
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -88,97 +95,85 @@ fun OrderDetailScreen(
             return@Scaffold
         }
 
-        Column(
-            Modifier
+        BoxWithConstraints(
+            modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(12.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(12.dp),
         ) {
-            Text(
-                "${df.format(Date(order.createdAtEpochMs))} · ${order.status.label}",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text("Table : ${order.tableLabel ?: "—"}  ·  Serveuse : ${order.waitressName ?: "—"}")
-            Text(
-                "Total ${MoneyFormat.format(order.totalAmount)} · " +
-                    "Payé ${MoneyFormat.format(order.paidAmount)} · " +
-                    "Reste ${MoneyFormat.format(order.remainingAmount)}",
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-
-            val lines = if (state.editing) state.editLines else order.items
-            lines.forEach { item ->
+            val wide = maxWidth >= 720.dp
+            if (wide) {
                 Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("${item.productName} ×${item.quantity}")
-                        Text(
-                            MoneyFormat.format(item.unitPrice),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Column(
+                        Modifier
+                            .weight(1.35f)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OrderHeader(order, df, state.message, state.error)
+                        OrderLines(
+                            lines = if (state.editing) state.editLines else order.items,
+                            editing = state.editing,
+                            onRemove = viewModel::removeLine,
+                        )
+                        OrderPayments(order)
+                    }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .widthIn(min = 240.dp, max = 420.dp)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OrderActions(
+                            order = order,
+                            editing = state.editing,
+                            canModifyOrCancel = state.canModifyOrCancel,
+                            canMarkPaid = state.canMarkPaid,
+                            editLinesEmpty = state.editLines.isEmpty(),
+                            onStartEdit = viewModel::startEdit,
+                            onSaveEdits = viewModel::saveEdits,
+                            onCancelEdit = viewModel::cancelEdit,
+                            onCancelOrder = viewModel::cancelOrder,
+                            onMarkPaid = { showPay = true },
+                            onPrint = viewModel::printTicket,
                         )
                     }
-                    Text(MoneyFormat.format(item.lineTotal))
-                    if (state.editing) {
-                        TextButton(onClick = { viewModel.removeLine(item.productId) }) {
-                            Text("Retirer")
-                        }
-                    }
                 }
-            }
-
-            if (order.payments.isNotEmpty()) {
-                Text("Paiements", fontWeight = FontWeight.SemiBold)
-                order.payments.forEach { p ->
-                    Text(
-                        "${p.paymentMode.label} ${MoneyFormat.format(p.amount)}" +
-                            if (p.changeAmount > 0) {
-                                " · monnaie ${MoneyFormat.format(p.changeAmount)}"
-                            } else {
-                                ""
-                            },
+            } else {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OrderHeader(order, df, state.message, state.error)
+                    OrderLines(
+                        lines = if (state.editing) state.editLines else order.items,
+                        editing = state.editing,
+                        onRemove = viewModel::removeLine,
+                    )
+                    OrderPayments(order)
+                    OrderActions(
+                        order = order,
+                        editing = state.editing,
+                        canModifyOrCancel = state.canModifyOrCancel,
+                        canMarkPaid = state.canMarkPaid,
+                        editLinesEmpty = state.editLines.isEmpty(),
+                        onStartEdit = viewModel::startEdit,
+                        onSaveEdits = viewModel::saveEdits,
+                        onCancelEdit = viewModel::cancelEdit,
+                        onCancelOrder = viewModel::cancelOrder,
+                        onMarkPaid = { showPay = true },
+                        onPrint = viewModel::printTicket,
                     )
                 }
             }
-
-            if (order.isOpen) {
-                if (!state.editing) {
-                    OutlinedButton(
-                        onClick = { viewModel.startEdit() },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    ) { Text("Modifier la commande") }
-                    Button(
-                        onClick = { showPay = true },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                    ) { Text("MARQUER COMME PAYÉ", fontWeight = FontWeight.Bold) }
-                    OutlinedButton(
-                        onClick = { viewModel.cancelOrder() },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    ) { Text("Annuler la commande") }
-                } else {
-                    Button(
-                        onClick = { viewModel.saveEdits() },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        enabled = state.editLines.isNotEmpty(),
-                    ) { Text("Enregistrer les modifications") }
-                    OutlinedButton(
-                        onClick = { viewModel.cancelEdit() },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Annuler l'édition") }
-                }
-            }
-
-            OutlinedButton(
-                onClick = { viewModel.printTicket() },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) { Text("Imprimer le ticket") }
         }
     }
 
@@ -193,6 +188,126 @@ fun OrderDetailScreen(
             },
         )
     }
+}
+
+@Composable
+private fun OrderHeader(
+    order: Order,
+    df: SimpleDateFormat,
+    message: String?,
+    error: String?,
+) {
+    Text(
+        "${df.format(Date(order.createdAtEpochMs))} · ${order.status.label}",
+        style = MaterialTheme.typography.titleMedium,
+    )
+    Text("Table : ${order.tableLabel ?: "—"}  ·  Serveuse : ${order.waitressName ?: "—"}")
+    Text(
+        "Total ${MoneyFormat.format(order.totalAmount)} · " +
+            "Payé ${MoneyFormat.format(order.paidAmount)} · " +
+            "Reste ${MoneyFormat.format(order.remainingAmount)}",
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+}
+
+@Composable
+private fun OrderLines(
+    lines: List<OrderLine>,
+    editing: Boolean,
+    onRemove: (Long) -> Unit,
+) {
+    lines.forEach { item ->
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("${item.productName} ×${item.quantity}")
+                Text(
+                    MoneyFormat.format(item.unitPrice),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(MoneyFormat.format(item.lineTotal))
+            if (editing) {
+                TextButton(onClick = { onRemove(item.productId) }) {
+                    Text("Retirer")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrderPayments(order: Order) {
+    if (order.payments.isEmpty()) return
+    Text("Paiements", fontWeight = FontWeight.SemiBold)
+    order.payments.forEach { p ->
+        Text(
+            "${p.paymentMode.label} ${MoneyFormat.format(p.amount)}" +
+                if (p.changeAmount > 0) {
+                    " · monnaie ${MoneyFormat.format(p.changeAmount)}"
+                } else {
+                    ""
+                },
+        )
+    }
+}
+
+@Composable
+private fun OrderActions(
+    order: Order,
+    editing: Boolean,
+    canModifyOrCancel: Boolean,
+    canMarkPaid: Boolean,
+    editLinesEmpty: Boolean,
+    onStartEdit: () -> Unit,
+    onSaveEdits: () -> Unit,
+    onCancelEdit: () -> Unit,
+    onCancelOrder: () -> Unit,
+    onMarkPaid: () -> Unit,
+    onPrint: () -> Unit,
+) {
+    if (order.isOpen) {
+        if (!editing) {
+            if (canMarkPaid) {
+                Button(
+                    onClick = onMarkPaid,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                ) { Text("MARQUER COMME PAYÉ", fontWeight = FontWeight.Bold) }
+            }
+            if (canModifyOrCancel) {
+                OutlinedButton(
+                    onClick = onStartEdit,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) { Text("Modifier la commande") }
+                OutlinedButton(
+                    onClick = onCancelOrder,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) { Text("Annuler la commande") }
+            }
+        } else if (canModifyOrCancel) {
+            Button(
+                onClick = onSaveEdits,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                enabled = !editLinesEmpty,
+            ) { Text("Enregistrer les modifications") }
+            OutlinedButton(
+                onClick = onCancelEdit,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Annuler l'édition") }
+        }
+    }
+
+    Spacer(Modifier.height(4.dp))
+    OutlinedButton(
+        onClick = onPrint,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+    ) { Text("Imprimer le ticket") }
 }
 
 @Composable

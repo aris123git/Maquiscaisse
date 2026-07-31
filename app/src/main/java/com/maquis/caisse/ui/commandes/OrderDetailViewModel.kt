@@ -24,6 +24,10 @@ data class OrderDetailUiState(
     val message: String? = null,
     val error: String? = null,
     val isBusy: Boolean = false,
+    /** Annuler / modifier : administrateur uniquement. */
+    val canModifyOrCancel: Boolean = false,
+    /** Marquer payé : admin ou caissier selon permissions. */
+    val canMarkPaid: Boolean = false,
 )
 
 @HiltViewModel
@@ -36,16 +40,27 @@ class OrderDetailViewModel @Inject constructor(
     private val _ui = MutableStateFlow(OrderDetailUiState())
     val ui: StateFlow<OrderDetailUiState> = _ui.asStateFlow()
 
+    private fun isAdmin(): Boolean =
+        session.userOrNull()?.role == "ADMIN"
+
+    private fun permissionFlags() = Pair(
+        first = isAdmin(),
+        second = session.can(Permissions.MARK_PAID),
+    )
+
     fun load(orderId: Long) {
         viewModelScope.launch {
             _ui.update { it.copy(isBusy = true, error = null) }
             try {
                 val order = orderRepository.getOrder(orderId)
+                val (canMod, canPay) = permissionFlags()
                 _ui.update {
                     it.copy(
                         order = order,
                         editLines = order?.items.orEmpty(),
                         isBusy = false,
+                        canModifyOrCancel = canMod,
+                        canMarkPaid = canPay,
                     )
                 }
             } catch (e: Exception) {
@@ -55,8 +70,8 @@ class OrderDetailViewModel @Inject constructor(
     }
 
     fun startEdit() {
-        if (!session.can(Permissions.SELL)) {
-            _ui.update { it.copy(error = "Permission insuffisante") }
+        if (!isAdmin()) {
+            _ui.update { it.copy(error = "Seul l'administrateur peut modifier une commande") }
             return
         }
         val order = _ui.value.order ?: return
@@ -71,21 +86,30 @@ class OrderDetailViewModel @Inject constructor(
     fun setQuantity(productId: Long, quantity: Int) {
         _ui.update { state ->
             val lines = state.editLines.mapNotNull { line ->
-                if (line.productId != productId) line
-                else if (quantity <= 0) null
-                else line.copy(quantity = quantity)
+                if (line.productId != productId) {
+                    line
+                } else if (quantity <= 0) {
+                    null
+                } else {
+                    line.copy(quantity = quantity)
+                }
             }
             state.copy(editLines = lines)
         }
     }
 
     fun removeLine(productId: Long) {
+        if (!isAdmin()) return
         _ui.update { state ->
             state.copy(editLines = state.editLines.filter { it.productId != productId })
         }
     }
 
     fun saveEdits() {
+        if (!isAdmin()) {
+            _ui.update { it.copy(error = "Seul l'administrateur peut modifier une commande") }
+            return
+        }
         val orderId = _ui.value.order?.id ?: return
         viewModelScope.launch {
             _ui.update { it.copy(isBusy = true, error = null) }
@@ -107,8 +131,8 @@ class OrderDetailViewModel @Inject constructor(
     }
 
     fun cancelOrder() {
-        if (!session.can(Permissions.CANCEL_ORDER)) {
-            _ui.update { it.copy(error = "Permission insuffisante") }
+        if (!isAdmin()) {
+            _ui.update { it.copy(error = "Seul l'administrateur peut annuler une commande") }
             return
         }
         val orderId = _ui.value.order?.id ?: return

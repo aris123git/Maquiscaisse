@@ -57,8 +57,12 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
             ) {
                 composable(Routes.CAISSE) {
                     CaisseScreen(
-                        onOrderCreated = { id ->
-                            navController.navigate(Routes.orderDetail(id))
+                        onOrderCreated = {
+                            // Après enregistrement : liste des commandes.
+                            // Marquer payé = ouvrir la commande (clic).
+                            navController.navigate(Routes.COMMANDES) {
+                                launchSingleTop = true
+                            }
                         },
                     )
                 }

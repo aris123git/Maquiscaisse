@@ -288,7 +288,7 @@ class CaisseViewModel @Inject constructor(
                     it.copy(
                         cart = emptyList(),
                         completedOrder = order,
-                        snackbarMessage = "Commande ${order.publicId} enregistrée",
+                        snackbarMessage = "Commande ${order.publicId} enregistrée — ouvre-la dans Commandes pour marquer payée",
                     )
                 }
                 if (printer.isEnabled()) {

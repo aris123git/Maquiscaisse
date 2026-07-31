@@ -1,6 +1,8 @@
 package com.maquis.caisse.ui.commandes
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,35 +37,50 @@ fun CommandesScreen(
     val filtered = viewModel.filtered(orders)
     val timeFmt = SimpleDateFormat("HH:mm", Locale.FRANCE)
 
-    Column(Modifier.fillMaxSize().padding(12.dp)) {
-        Text("Commandes en cours", style = MaterialTheme.typography.headlineMedium)
-        OutlinedTextField(
-            value = ui.query,
-            onValueChange = viewModel::onQuery,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            singleLine = true,
-            placeholder = { Text("Rechercher ID, serveuse, table…") },
-        )
-        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-            Text("ID", Modifier.weight(1.3f), style = MaterialTheme.typography.labelLarge)
-            Text("Heure", Modifier.weight(0.7f), style = MaterialTheme.typography.labelLarge)
-            Text("Table", Modifier.weight(0.8f), style = MaterialTheme.typography.labelLarge)
-            Text("Serveuse", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-            Text("Total", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-            Text("Statut", Modifier.weight(0.9f), style = MaterialTheme.typography.labelLarge)
-        }
-        HorizontalDivider()
-        if (filtered.isEmpty()) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(12.dp)) {
+        val compact = maxWidth < 700.dp
+        Column(Modifier.fillMaxSize()) {
+            Text("Commandes en cours", style = MaterialTheme.typography.headlineMedium)
             Text(
-                "Aucune commande en cours",
-                modifier = Modifier.padding(24.dp),
+                "Touche une commande pour marquer comme payée.",
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
             )
-        } else {
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(filtered, key = { it.id }) { order ->
-                    OrderRow(order, timeFmt) { onOpenOrder(order.id) }
-                    HorizontalDivider()
+            OutlinedTextField(
+                value = ui.query,
+                onValueChange = viewModel::onQuery,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                singleLine = true,
+                placeholder = { Text("Rechercher ID, serveuse, table…") },
+            )
+            if (!compact) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Text("ID", Modifier.weight(1.3f), style = MaterialTheme.typography.labelLarge)
+                    Text("Heure", Modifier.weight(0.7f), style = MaterialTheme.typography.labelLarge)
+                    Text("Table", Modifier.weight(0.8f), style = MaterialTheme.typography.labelLarge)
+                    Text("Serveuse", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    Text("Total", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    Text("Statut", Modifier.weight(0.9f), style = MaterialTheme.typography.labelLarge)
+                }
+                HorizontalDivider()
+            }
+            if (filtered.isEmpty()) {
+                Text(
+                    "Aucune commande en cours",
+                    modifier = Modifier.padding(24.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(filtered, key = { it.id }) { order ->
+                        if (compact) {
+                            CompactOrderRow(order, timeFmt) { onOpenOrder(order.id) }
+                        } else {
+                            OrderRow(order, timeFmt) { onOpenOrder(order.id) }
+                        }
+                        HorizontalDivider()
+                    }
                 }
             }
         }
@@ -88,5 +106,34 @@ fun OrderRow(order: Order, timeFmt: SimpleDateFormat, onClick: () -> Unit) {
             color = MaterialTheme.colorScheme.primary,
         )
         Text(order.status.label, Modifier.weight(0.9f), style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+fun CompactOrderRow(order: Order, timeFmt: SimpleDateFormat, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(order.publicId, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                MoneyFormat.format(order.totalAmount),
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        Text(
+            "${timeFmt.format(Date(order.createdAtEpochMs))} · " +
+                "Table ${order.tableLabel ?: "—"} · " +
+                (order.waitressName ?: "—") +
+                " · ${order.status.label}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

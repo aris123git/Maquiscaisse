@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -152,69 +151,86 @@ fun ProductFormScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1.4f)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (previewModel != null) {
-                    AsyncImage(
-                        model = previewModel,
-                        contentDescription = "Photo produit",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    Icon(
-                        Icons.Filled.Image,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
+            // Image compacte : laisse la place aux champs (tablette paysage).
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                FilledTonalButton(
-                    onClick = {
-                        if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
-                            galleryLauncher.launch(
-                                PickVisualMediaRequest(
-                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                ),
+                Box(
+                    modifier = Modifier
+                        .size(width = 120.dp, height = 90.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (previewModel != null) {
+                        AsyncImage(
+                            model = previewModel,
+                            contentDescription = "Photo produit",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Icon(
+                            Icons.Filled.Image,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(
+                            onClick = {
+                                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
+                                    galleryLauncher.launch(
+                                        PickVisualMediaRequest(
+                                            ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                        ),
+                                    )
+                                } else {
+                                    galleryLegacyLauncher.launch("image/*")
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.PhotoLibrary,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
                             )
-                        } else {
-                            galleryLegacyLauncher.launch("image/*")
+                            Spacer(modifier = Modifier.size(6.dp))
+                            Text("Galerie")
                         }
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-                ) {
-                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null)
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text("Galerie")
-                }
-                FilledTonalButton(
-                    onClick = { launchCamera() },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-                ) {
-                    Icon(Icons.Filled.CameraAlt, contentDescription = null)
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text("Photo")
-                }
-            }
-
-            if (previewModel != null) {
-                TextButton(onClick = onClearImage) {
-                    Text("Retirer l'image")
+                        FilledTonalButton(
+                            onClick = { launchCamera() },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.CameraAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.size(6.dp))
+                            Text("Photo")
+                        }
+                    }
+                    if (previewModel != null) {
+                        TextButton(
+                            onClick = onClearImage,
+                            modifier = Modifier.height(36.dp),
+                        ) {
+                            Text("Retirer l'image")
+                        }
+                    }
                 }
             }
 

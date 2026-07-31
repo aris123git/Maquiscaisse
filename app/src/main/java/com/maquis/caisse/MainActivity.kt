@@ -2,6 +2,7 @@ package com.maquis.caisse
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.data.local.DatabaseSeed
+import com.maquis.caisse.kiosk.KioskManager
 import com.maquis.caisse.navigation.MaquisNavGraph
 import com.maquis.caisse.ui.login.LoginScreen
 import com.maquis.caisse.ui.theme.MaquisCaisseTheme
@@ -26,6 +28,7 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var databaseSeed: DatabaseSeed
     @Inject lateinit var sessionManager: SessionManager
+    @Inject lateinit var kioskManager: KioskManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,11 +36,22 @@ class MainActivity : ComponentActivity() {
         setContent {
             var ready by remember { mutableStateOf(false) }
             val currentUser by sessionManager.currentUser.collectAsStateWithLifecycle()
+            val kioskState by kioskManager.state.collectAsStateWithLifecycle()
+            val lockActive = kioskState.shouldLockNow
 
             LaunchedEffect(Unit) {
                 databaseSeed.ensureDefaults()
                 ready = true
             }
+
+            LaunchedEffect(ready, lockActive) {
+                if (ready && lockActive) {
+                    kioskManager.enterKiosk(this@MainActivity)
+                }
+            }
+
+            // Empêche le bouton Retour de quitter l'app en mode kiosque.
+            BackHandler(enabled = lockActive) { /* bloqué */ }
 
             MaquisCaisseTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -50,6 +64,20 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::kioskManager.isInitialized && kioskManager.shouldLockNow()) {
+            kioskManager.enterKiosk(this)
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && ::kioskManager.isInitialized && kioskManager.shouldLockNow()) {
+            kioskManager.hideSystemUi(this)
         }
     }
 }

@@ -2,6 +2,7 @@ package com.maquis.caisse.ui.parametres
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,20 +33,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.core.SettingsKeys
 import com.maquis.caisse.data.backup.BackupManager
 import com.maquis.caisse.data.print.EscPosPrinter
+import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.domain.repository.SettingsRepository
 import com.maquis.caisse.domain.repository.UserRepository
+import com.maquis.caisse.kiosk.KioskManager
+import com.maquis.caisse.kiosk.KioskSecureStore
 import com.maquis.caisse.ui.common.DropdownField
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,6 +72,12 @@ data class ParametresUiState(
     val devices: List<BtDeviceUi> = emptyList(),
     val message: String? = null,
     val backupBusy: Boolean = false,
+    val isAdmin: Boolean = false,
+    val kioskEnabled: Boolean = false,
+    val kioskAutoStart: Boolean = false,
+    val kioskHasPin: Boolean = false,
+    val kioskDeviceOwner: Boolean = false,
+    val kioskLockedNow: Boolean = false,
 )
 
 data class BtDeviceUi(val name: String, val address: String)
@@ -79,11 +89,17 @@ class ParametresViewModel @Inject constructor(
     private val backupManager: BackupManager,
     private val userRepository: UserRepository,
     private val session: SessionManager,
+    private val kioskManager: KioskManager,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ParametresUiState())
     val ui: StateFlow<ParametresUiState> = _ui.asStateFlow()
 
     fun suggestedBackupName(): String = backupManager.suggestedFileName()
+
+    fun isAdmin(): Boolean {
+        val user = session.userOrNull() ?: return false
+        return user.role == "ADMIN" || user.can(Permissions.MANAGE_USERS)
+    }
 
     fun changeOwnPin(newPin: String, confirm: String) = viewModelScope.launch {
         if (newPin != confirm) {
@@ -103,8 +119,150 @@ class ParametresViewModel @Inject constructor(
         }
     }
 
+    fun setKioskAdminPin(currentPin: String?, newPin: String, confirm: String): Boolean {
+        if (!isAdmin()) {
+            _ui.update { it.copy(message = "Réservé à l'administrateur") }
+            return false
+        }
+        if (newPin != confirm) {
+            _ui.update { it.copy(message = "Les deux codes administrateur ne correspondent pas") }
+            return false
+        }
+        if (kioskManager.hasAdminPin()) {
+            when (val result = kioskManager.verifyAdminPin(currentPin.orEmpty())) {
+                is KioskSecureStore.PinVerifyResult.Ok -> Unit
+                is KioskSecureStore.PinVerifyResult.Wrong -> {
+                    _ui.update {
+                        it.copy(message = "PIN administrateur incorrect (${result.remaining} essais restants)")
+                    }
+                    return false
+                }
+                is KioskSecureStore.PinVerifyResult.LockedOut -> {
+                    _ui.update {
+                        it.copy(message = "Trop d'essais — réessaie dans ${result.secondsRemaining}s")
+                    }
+                    return false
+                }
+                KioskSecureStore.PinVerifyResult.NoPinSet -> Unit
+            }
+        }
+        return try {
+            kioskManager.setAdminPin(newPin)
+            refreshKioskUi()
+            _ui.update { it.copy(message = "PIN administrateur kiosque enregistré") }
+            true
+        } catch (e: Exception) {
+            _ui.update { it.copy(message = e.message ?: "Échec enregistrement PIN") }
+            false
+        }
+    }
+
+    fun setKioskEnabled(enabled: Boolean, adminPin: String, activity: Activity): Boolean {
+        if (!isAdmin()) {
+            _ui.update { it.copy(message = "Réservé à l'administrateur") }
+            return false
+        }
+        if (!verifyPinForAdminAction(adminPin)) return false
+        if (enabled && !kioskManager.hasAdminPin()) {
+            _ui.update { it.copy(message = "Définis d'abord le PIN administrateur kiosque") }
+            return false
+        }
+        if (enabled) {
+            kioskManager.setEnabled(true)
+            kioskManager.enterKiosk(activity)
+            _ui.update { it.copy(message = "Mode kiosque activé (Lock Task)") }
+        } else {
+            kioskManager.disableKiosk(activity)
+            _ui.update { it.copy(message = "Mode kiosque désactivé") }
+        }
+        refreshKioskUi()
+        return true
+    }
+
+    fun setKioskAutoStart(enabled: Boolean, adminPin: String): Boolean {
+        if (!isAdmin()) {
+            _ui.update { it.copy(message = "Réservé à l'administrateur") }
+            return false
+        }
+        if (!verifyPinForAdminAction(adminPin)) return false
+        kioskManager.setAutoStart(enabled)
+        refreshKioskUi()
+        _ui.update {
+            it.copy(
+                message = if (enabled) {
+                    "NexaPOS se lancera automatiquement au démarrage"
+                } else {
+                    "Démarrage automatique désactivé"
+                },
+            )
+        }
+        return true
+    }
+
+    fun exitKioskTemporary(adminPin: String, activity: Activity): Boolean {
+        if (!isAdmin()) {
+            _ui.update { it.copy(message = "Réservé à l'administrateur") }
+            return false
+        }
+        if (!verifyPinForAdminAction(adminPin)) return false
+        kioskManager.exitKiosk(activity)
+        refreshKioskUi()
+        _ui.update {
+            it.copy(message = "Mode kiosque quitté temporairement (actif au prochain redémarrage)")
+        }
+        return true
+    }
+
+    /** Vérifie le PIN admin sans quitter le kiosque (étape avant confirmation). */
+    fun checkAdminPin(adminPin: String): Boolean {
+        if (!isAdmin()) {
+            _ui.update { it.copy(message = "Réservé à l'administrateur") }
+            return false
+        }
+        return verifyPinForAdminAction(adminPin)
+    }
+
+    private fun verifyPinForAdminAction(adminPin: String): Boolean {
+        when (val result = kioskManager.verifyAdminPin(adminPin)) {
+            KioskSecureStore.PinVerifyResult.Ok -> return true
+            KioskSecureStore.PinVerifyResult.NoPinSet -> {
+                _ui.update { it.copy(message = "Définis d'abord le PIN administrateur kiosque") }
+                return false
+            }
+            is KioskSecureStore.PinVerifyResult.Wrong -> {
+                _ui.update {
+                    it.copy(message = "PIN administrateur incorrect (${result.remaining} essais restants)")
+                }
+                return false
+            }
+            is KioskSecureStore.PinVerifyResult.LockedOut -> {
+                _ui.update {
+                    it.copy(message = "Trop d'essais — réessaie dans ${result.secondsRemaining}s")
+                }
+                return false
+            }
+        }
+    }
+
+    private fun refreshKioskUi() {
+        val ks = kioskManager.state.value
+        _ui.update {
+            it.copy(
+                isAdmin = isAdmin(),
+                kioskEnabled = ks.enabled,
+                kioskAutoStart = ks.autoStart,
+                kioskHasPin = ks.hasAdminPin,
+                kioskDeviceOwner = kioskManager.isDeviceOwner(),
+                kioskLockedNow = ks.shouldLockNow,
+            )
+        }
+    }
+
     init {
         viewModelScope.launch { reload() }
+        viewModelScope.launch {
+            kioskManager.state.collect { refreshKioskUi() }
+        }
     }
 
     suspend fun reload() {
@@ -121,7 +279,10 @@ class ParametresViewModel @Inject constructor(
                 tablesEnabled = settings.get(SettingsKeys.TABLES_ENABLED, "true") == "true",
             )
         }
+        refreshKioskUi()
     }
+
+    fun deviceOwnerHint(): String = kioskManager.deviceOwnerSetupHint()
 
     fun update(transform: (ParametresUiState) -> ParametresUiState) {
         _ui.update(transform)
@@ -203,13 +364,26 @@ class ParametresViewModel @Inject constructor(
     }
 }
 
+private enum class KioskPinAction {
+    SET_PIN,
+    TOGGLE_ENABLED,
+    TOGGLE_AUTO_START,
+    EXIT_KIOSK,
+}
+
 @Composable
 fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val activity = LocalContext.current as Activity
     var permissionsReady by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     var changeOwnPin by remember { mutableStateOf(false) }
+    var kioskPinAction by remember { mutableStateOf<KioskPinAction?>(null) }
+    var pendingKioskEnable by remember { mutableStateOf<Boolean?>(null) }
+    var pendingAutoStart by remember { mutableStateOf<Boolean?>(null) }
+    var confirmExitKiosk by remember { mutableStateOf(false) }
+    var verifiedExitPin by remember { mutableStateOf<String?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(BackupManager.MIME_ZIP),
@@ -335,6 +509,64 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             )
         }
 
+        if (ui.isAdmin) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Text("MODE KIOSQUE", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Verrouille la tablette sur NexaPOS (Lock Task Mode Android). " +
+                    "Le PIN administrateur kiosque est distinct des codes caissier.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = ui.kioskEnabled,
+                    onCheckedChange = { checked ->
+                        pendingKioskEnable = checked
+                        kioskPinAction = KioskPinAction.TOGGLE_ENABLED
+                    },
+                )
+                Text("Activer le mode kiosque")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = ui.kioskAutoStart,
+                    onCheckedChange = { checked ->
+                        pendingAutoStart = checked
+                        kioskPinAction = KioskPinAction.TOGGLE_AUTO_START
+                    },
+                )
+                Text("Lancer automatiquement NexaPOS au démarrage")
+            }
+            Text(
+                "PIN administrateur : ${if (ui.kioskHasPin) "••••" else "non défini"}",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            OutlinedButton(
+                onClick = { kioskPinAction = KioskPinAction.SET_PIN },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text(if (ui.kioskHasPin) "Modifier le PIN administrateur" else "Définir le PIN administrateur")
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Text("Administration", style = MaterialTheme.typography.titleLarge)
+            OutlinedButton(
+                onClick = { kioskPinAction = KioskPinAction.EXIT_KIOSK },
+                enabled = ui.kioskEnabled && ui.kioskLockedNow,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+            ) { Text("Quitter le mode kiosque") }
+            Text(
+                if (ui.kioskDeviceOwner) {
+                    "Device Owner actif — verrouillage système renforcé."
+                } else {
+                    viewModel.deviceOwnerHint()
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         Button(
             onClick = { viewModel.save() },
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(top = 8.dp),
@@ -415,4 +647,193 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             },
         )
     }
+
+    val pinAction = kioskPinAction
+    if (pinAction != null) {
+        KioskAdminPinDialog(
+            action = pinAction,
+            hasExistingPin = ui.kioskHasPin,
+            onDismiss = {
+                kioskPinAction = null
+                pendingKioskEnable = null
+                pendingAutoStart = null
+            },
+            onConfirm = { currentPin, newPin, confirmPin ->
+                when (pinAction) {
+                    KioskPinAction.SET_PIN -> {
+                        if (viewModel.setKioskAdminPin(
+                                currentPin,
+                                newPin.orEmpty(),
+                                confirmPin.orEmpty(),
+                            )
+                        ) {
+                            kioskPinAction = null
+                        }
+                    }
+                    KioskPinAction.TOGGLE_ENABLED -> {
+                        val target = pendingKioskEnable ?: return@KioskAdminPinDialog
+                        if (viewModel.setKioskEnabled(target, currentPin.orEmpty(), activity)) {
+                            kioskPinAction = null
+                            pendingKioskEnable = null
+                        }
+                    }
+                    KioskPinAction.TOGGLE_AUTO_START -> {
+                        val target = pendingAutoStart ?: return@KioskAdminPinDialog
+                        if (viewModel.setKioskAutoStart(target, currentPin.orEmpty())) {
+                            kioskPinAction = null
+                            pendingAutoStart = null
+                        }
+                    }
+                    KioskPinAction.EXIT_KIOSK -> {
+                        if (viewModel.checkAdminPin(currentPin.orEmpty())) {
+                            verifiedExitPin = currentPin
+                            kioskPinAction = null
+                            confirmExitKiosk = true
+                        }
+                    }
+                }
+            },
+        )
+    }
+
+    if (confirmExitKiosk) {
+        AlertDialog(
+            onDismissRequest = {
+                confirmExitKiosk = false
+                verifiedExitPin = null
+            },
+            title = { Text("Quitter le mode kiosque ?") },
+            text = {
+                Text(
+                    "La navigation Android sera temporairement débloquée. " +
+                        "Le mode kiosque se réactivera après un redémarrage si toujours activé.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val pin = verifiedExitPin.orEmpty()
+                        confirmExitKiosk = false
+                        verifiedExitPin = null
+                        viewModel.exitKioskTemporary(pin, activity)
+                    },
+                ) { Text("Confirmer") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        confirmExitKiosk = false
+                        verifiedExitPin = null
+                    },
+                ) { Text("Annuler") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun KioskAdminPinDialog(
+    action: KioskPinAction,
+    hasExistingPin: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (currentPin: String?, newPin: String?, confirmPin: String?) -> Unit,
+) {
+    var currentPin by remember { mutableStateOf("") }
+    var newPin by remember { mutableStateOf("") }
+    var confirmPin by remember { mutableStateOf("") }
+
+    val title = when (action) {
+        KioskPinAction.SET_PIN ->
+            if (hasExistingPin) "Modifier le PIN administrateur" else "PIN administrateur kiosque"
+        KioskPinAction.EXIT_KIOSK -> "Code administrateur requis"
+        else -> "Code administrateur requis"
+    }
+
+    val canSubmit = when (action) {
+        KioskPinAction.SET_PIN -> {
+            val newOk = newPin.length >= KioskSecureStore.MIN_PIN_LENGTH && newPin == confirmPin
+            if (hasExistingPin) currentPin.length >= KioskSecureStore.MIN_PIN_LENGTH && newOk else newOk
+        }
+        else -> currentPin.length >= KioskSecureStore.MIN_PIN_LENGTH
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (action == KioskPinAction.EXIT_KIOSK || action != KioskPinAction.SET_PIN) {
+                    Text(
+                        text = "•".repeat(currentPin.length.coerceAtLeast(0)).ifEmpty { "••••" },
+                        style = MaterialTheme.typography.headlineMedium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (action != KioskPinAction.SET_PIN || hasExistingPin) {
+                    OutlinedTextField(
+                        value = currentPin,
+                        onValueChange = {
+                            currentPin = it.filter { c -> c.isDigit() }
+                                .take(KioskSecureStore.MAX_PIN_LENGTH)
+                        },
+                        label = {
+                            Text(
+                                if (action == KioskPinAction.SET_PIN) {
+                                    "PIN actuel"
+                                } else {
+                                    "Code administrateur"
+                                },
+                            )
+                        },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (action == KioskPinAction.SET_PIN) {
+                    OutlinedTextField(
+                        value = newPin,
+                        onValueChange = {
+                            newPin = it.filter { c -> c.isDigit() }
+                                .take(KioskSecureStore.MAX_PIN_LENGTH)
+                        },
+                        label = { Text("Nouveau PIN") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = confirmPin,
+                        onValueChange = {
+                            confirmPin = it.filter { c -> c.isDigit() }
+                                .take(KioskSecureStore.MAX_PIN_LENGTH)
+                        },
+                        label = { Text("Confirmer") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    when (action) {
+                        KioskPinAction.SET_PIN -> onConfirm(
+                            currentPin.takeIf { hasExistingPin },
+                            newPin,
+                            confirmPin,
+                        )
+                        else -> onConfirm(currentPin, null, null)
+                    }
+                },
+                enabled = canSubmit,
+            ) { Text("Valider") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annuler") }
+        },
+    )
 }

@@ -34,7 +34,7 @@ fun CommandesScreen(
     val filtered = viewModel.filtered(orders)
     val timeFmt = SimpleDateFormat("HH:mm", Locale.FRANCE)
 
-    Column(Modifier = Modifier.fillMaxSize().padding(12.dp)) {
+    Column(Modifier.fillMaxSize().padding(12.dp)) {
         Text("Commandes en cours", style = MaterialTheme.typography.headlineMedium)
         OutlinedTextField(
             value = ui.query,
@@ -43,7 +43,7 @@ fun CommandesScreen(
             singleLine = true,
             placeholder = { Text("Rechercher ID, serveuse, table…") },
         )
-        Row(Modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Text("ID", Modifier.weight(1.3f), style = MaterialTheme.typography.labelLarge)
             Text("Heure", Modifier.weight(0.7f), style = MaterialTheme.typography.labelLarge)
             Text("Table", Modifier.weight(0.8f), style = MaterialTheme.typography.labelLarge)
@@ -59,7 +59,7 @@ fun CommandesScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize()) {
                 items(filtered, key = { it.id }) { order ->
                     OrderRow(order, timeFmt) { onOpenOrder(order.id) }
                     HorizontalDivider()
@@ -72,7 +72,7 @@ fun CommandesScreen(
 @Composable
 fun OrderRow(order: Order, timeFmt: SimpleDateFormat, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),
@@ -81,7 +81,12 @@ fun OrderRow(order: Order, timeFmt: SimpleDateFormat, onClick: () -> Unit) {
         Text(timeFmt.format(Date(order.createdAtEpochMs)), Modifier.weight(0.7f), style = MaterialTheme.typography.bodyLarge)
         Text(order.tableLabel ?: "—", Modifier.weight(0.8f), style = MaterialTheme.typography.bodyLarge, maxLines = 1)
         Text(order.waitressName ?: "—", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-        Text(MoneyFormat.format(order.totalAmount), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
+        Text(
+            MoneyFormat.format(order.totalAmount),
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
         Text(order.status.label, Modifier.weight(0.9f), style = MaterialTheme.typography.bodyLarge)
     }
 }

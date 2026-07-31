@@ -35,48 +35,50 @@ class StockRepositoryImpl @Inject constructor(
         supplier: String?,
         comment: String?,
         absoluteNewStock: Int?,
-    ) = withContext(Dispatchers.IO) {
-        val user = session.user()
-        val now = System.currentTimeMillis()
-        db.withTransaction {
-            val product = productDao.getById(productId) ?: error("Produit introuvable")
-            val previous = product.stock
-            val newStock = when {
-                absoluteNewStock != null -> absoluteNewStock.coerceAtLeast(0)
-                type == "ENTREE" -> previous + quantity.coerceAtLeast(0)
-                type == "SORTIE" || type == "PERTE" -> (previous - quantity.coerceAtLeast(0)).coerceAtLeast(0)
-                else -> previous + quantity
+    ) {
+        withContext(Dispatchers.IO) {
+            val user = session.user()
+            val now = System.currentTimeMillis()
+            db.withTransaction {
+                val product = productDao.getById(productId) ?: error("Produit introuvable")
+                val previous = product.stock
+                val newStock = when {
+                    absoluteNewStock != null -> absoluteNewStock.coerceAtLeast(0)
+                    type == "ENTREE" -> previous + quantity.coerceAtLeast(0)
+                    type == "SORTIE" || type == "PERTE" -> (previous - quantity.coerceAtLeast(0)).coerceAtLeast(0)
+                    else -> previous + quantity
+                }
+                val delta = kotlin.math.abs(newStock - previous)
+                productDao.update(product.copy(stock = newStock))
+                movementDao.insert(
+                    StockMovementEntity(
+                        productId = productId,
+                        productName = product.name,
+                        type = type,
+                        quantity = if (absoluteNewStock != null) delta else quantity.coerceAtLeast(0),
+                        previousStock = previous,
+                        newStock = newStock,
+                        motif = motif,
+                        supplier = supplier,
+                        comment = comment,
+                        userId = user.id,
+                        userName = user.name,
+                        createdAt = now,
+                    ),
+                )
+                db.auditLogDao().insert(
+                    AuditLogEntity(
+                        userId = user.id,
+                        userName = user.name,
+                        action = "STOCK_$type",
+                        details = "${user.name} : ${product.name} $type " +
+                            "(stock $previous → $newStock)",
+                        oldValue = previous.toString(),
+                        newValue = newStock.toString(),
+                        createdAt = now,
+                    ),
+                )
             }
-            val delta = kotlin.math.abs(newStock - previous)
-            productDao.update(product.copy(stock = newStock))
-            movementDao.insert(
-                StockMovementEntity(
-                    productId = productId,
-                    productName = product.name,
-                    type = type,
-                    quantity = if (absoluteNewStock != null) delta else quantity.coerceAtLeast(0),
-                    previousStock = previous,
-                    newStock = newStock,
-                    motif = motif,
-                    supplier = supplier,
-                    comment = comment,
-                    userId = user.id,
-                    userName = user.name,
-                    createdAt = now,
-                ),
-            )
-            db.auditLogDao().insert(
-                AuditLogEntity(
-                    userId = user.id,
-                    userName = user.name,
-                    action = "STOCK_$type",
-                    details = "${user.name} : ${product.name} $type " +
-                        "(stock $previous → $newStock)",
-                    oldValue = previous.toString(),
-                    newValue = newStock.toString(),
-                    createdAt = now,
-                ),
-            )
         }
     }
 

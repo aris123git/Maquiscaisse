@@ -9,6 +9,8 @@ import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.domain.model.ProductSalesRow
 import com.maquis.caisse.domain.model.WaitressStats
+import com.maquis.caisse.domain.model.Category
+import com.maquis.caisse.domain.repository.CategoryRepository
 import com.maquis.caisse.domain.repository.OrderRepository
 import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.ui.common.DateRanges
@@ -35,6 +37,7 @@ data class HistoriqueUiState(
     val categoryFilter: String? = null,
     val period: HistoryPeriod = HistoryPeriod.TODAY,
     val waitresses: List<AppUser> = emptyList(),
+    val categories: List<String> = emptyList(),
     val waitressStats: WaitressStats? = null,
     val categoryRows: List<CategorySalesRow> = emptyList(),
     val productRows: List<ProductSalesRow> = emptyList(),
@@ -45,6 +48,7 @@ data class HistoriqueUiState(
 class HistoriqueViewModel @Inject constructor(
     private val orderRepository: OrderRepository,
     private val userRepository: UserRepository,
+    categoryRepository: CategoryRepository,
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(HistoriqueUiState())
@@ -73,6 +77,11 @@ class HistoriqueViewModel @Inject constructor(
         viewModelScope.launch {
             userRepository.observeWaitresses().collect { list ->
                 _ui.update { it.copy(waitresses = list) }
+            }
+        }
+        viewModelScope.launch {
+            categoryRepository.observeActive().collect { list ->
+                _ui.update { it.copy(categories = list.map(Category::name)) }
             }
         }
         refreshStats()

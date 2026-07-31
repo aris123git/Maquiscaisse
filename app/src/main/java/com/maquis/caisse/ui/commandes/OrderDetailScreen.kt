@@ -81,7 +81,7 @@ fun OrderDetailScreen(
     ) { padding ->
         val order = state.order
         if (order == null) {
-            Column(Modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp)) {
+            Column(Modifier.fillMaxSize().padding(padding).padding(24.dp)) {
                 if (state.isBusy) CircularProgressIndicator()
                 else Text(state.error ?: "Commande introuvable")
             }
@@ -89,7 +89,7 @@ fun OrderDetailScreen(
         }
 
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(12.dp)
@@ -114,10 +114,10 @@ fun OrderDetailScreen(
             val lines = if (state.editing) state.editLines else order.items
             lines.forEach { item ->
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(Modifier.weight(1f)) {
                         Text("${item.productName} ×${item.quantity}")
                         Text(
                             MoneyFormat.format(item.unitPrice),
@@ -139,7 +139,11 @@ fun OrderDetailScreen(
                 order.payments.forEach { p ->
                     Text(
                         "${p.paymentMode.label} ${MoneyFormat.format(p.amount)}" +
-                            if (p.changeAmount > 0) " · monnaie ${MoneyFormat.format(p.changeAmount)}" else "",
+                            if (p.changeAmount > 0) {
+                                " · monnaie ${MoneyFormat.format(p.changeAmount)}"
+                            } else {
+                                ""
+                            },
                     )
                 }
             }

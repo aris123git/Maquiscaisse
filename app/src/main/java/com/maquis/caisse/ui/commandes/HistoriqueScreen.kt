@@ -98,6 +98,16 @@ fun HistoriqueScreen(
                     nullLabel = "Tous",
                     modifier = Modifier.weight(1f),
                 )
+                DropdownField(
+                    label = "Catégorie",
+                    selected = ui.categoryFilter,
+                    options = ui.categories,
+                    optionLabel = { it },
+                    onSelect = viewModel::onCategory,
+                    allowNull = true,
+                    nullLabel = "Toutes",
+                    modifier = Modifier.weight(1f),
+                )
             }
             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Text("ID", Modifier.weight(1.3f), style = MaterialTheme.typography.labelLarge)

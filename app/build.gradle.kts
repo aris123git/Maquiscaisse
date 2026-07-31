@@ -13,10 +13,21 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.5.0-maquis-commandes"
+        versionCode = 6
+        versionName = "0.5.1-backup"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Keystore stable (repo) : les APK CI successifs s'installent en mise à jour
+    // sans « conflit de signature » ni désinstallation obligatoire.
+    signingConfigs {
+        create("ciDebug") {
+            storeFile = file("keystore/ci-debug.jks")
+            storePassword = "android"
+            keyAlias = "maquiscaisse"
+            keyPassword = "android"
+        }
     }
 
     // Schémas Room exportés pour tests de migration (exportSchema = true).
@@ -24,8 +35,12 @@ android {
     // Les fichiers générés vont dans app/schemas/.
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("ciDebug")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("ciDebug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

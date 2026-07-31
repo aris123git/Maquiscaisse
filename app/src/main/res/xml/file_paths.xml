@@ -2,4 +2,6 @@
 <paths>
     <!-- Photos caméra temporaires (cache privé de l'app). -->
     <cache-path name="camera_capture" path="camera/" />
+    <!-- Sauvegardes temporaires avant partage. -->
+    <cache-path name="backups" path="backups/" />
 </paths>

@@ -2,6 +2,7 @@ package com.maquis.caisse.ui.parametres
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -21,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +38,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.maquis.caisse.core.SettingsKeys
+import com.maquis.caisse.data.backup.BackupManager
 import com.maquis.caisse.data.print.EscPosPrinter
 import com.maquis.caisse.domain.repository.SettingsRepository
 import com.maquis.caisse.ui.common.DropdownField
@@ -58,6 +62,7 @@ data class ParametresUiState(
     val tablesEnabled: Boolean = true,
     val devices: List<BtDeviceUi> = emptyList(),
     val message: String? = null,
+    val backupBusy: Boolean = false,
 )
 
 data class BtDeviceUi(val name: String, val address: String)
@@ -66,9 +71,12 @@ data class BtDeviceUi(val name: String, val address: String)
 class ParametresViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val printer: EscPosPrinter,
+    private val backupManager: BackupManager,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ParametresUiState())
     val ui: StateFlow<ParametresUiState> = _ui.asStateFlow()
+
+    fun suggestedBackupName(): String = backupManager.suggestedFileName()
 
     init {
         viewModelScope.launch { reload() }
@@ -108,6 +116,36 @@ class ParametresViewModel @Inject constructor(
         _ui.update { it.copy(message = "Paramètres enregistrés") }
     }
 
+    fun exportBackup(uri: Uri) = viewModelScope.launch {
+        _ui.update { it.copy(backupBusy = true, message = "Export en cours…") }
+        val result = backupManager.exportToUri(uri)
+        _ui.update {
+            it.copy(
+                backupBusy = false,
+                message = if (result.isSuccess) {
+                    "Sauvegarde exportée. Garde ce fichier avant toute désinstallation."
+                } else {
+                    result.exceptionOrNull()?.message ?: "Échec de l'export"
+                },
+            )
+        }
+    }
+
+    fun importBackup(uri: Uri) = viewModelScope.launch {
+        _ui.update { it.copy(backupBusy = true, message = "Restauration… l'app va redémarrer") }
+        val result = backupManager.importFromUri(uri)
+        if (result.isSuccess) {
+            backupManager.restartApp()
+        } else {
+            _ui.update {
+                it.copy(
+                    backupBusy = false,
+                    message = result.exceptionOrNull()?.message ?: "Échec de la restauration",
+                )
+            }
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun refreshBluetoothDevices() {
         val devices = printer.bondedDevices().map { d ->
@@ -144,6 +182,23 @@ class ParametresViewModel @Inject constructor(
 fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     var permissionsReady by remember { mutableStateOf(false) }
+    var confirmRestore by remember { mutableStateOf(false) }
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(BackupManager.MIME_ZIP),
+    ) { uri ->
+        if (uri != null) viewModel.exportBackup(uri)
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            pendingRestoreUri = uri
+            confirmRestore = true
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -181,6 +236,25 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             )
             Text("Activer la gestion des tables")
         }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        Text("Sauvegarde des données", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "Avant une désinstallation (conflit d'APK), exporte une sauvegarde. " +
+                "Après réinstallation, restaure ce fichier. La caisse n'est pas ralentie.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = { exportLauncher.launch(viewModel.suggestedBackupName()) },
+            enabled = !ui.backupBusy,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+        ) { Text("Exporter la sauvegarde") }
+        OutlinedButton(
+            onClick = { importLauncher.launch(arrayOf(BackupManager.MIME_ZIP, "application/octet-stream", "*/*")) },
+            enabled = !ui.backupBusy,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+        ) { Text("Restaurer une sauvegarde") }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
         Text("Impression", style = MaterialTheme.typography.titleLarge)
@@ -236,5 +310,38 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(top = 8.dp),
         ) { Text("Enregistrer") }
         ui.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+    }
+
+    if (confirmRestore) {
+        AlertDialog(
+            onDismissRequest = {
+                confirmRestore = false
+                pendingRestoreUri = null
+            },
+            title = { Text("Restaurer la sauvegarde ?") },
+            text = {
+                Text(
+                    "Les données actuelles seront remplacées. L'application redémarrera ensuite.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val uri = pendingRestoreUri
+                        confirmRestore = false
+                        pendingRestoreUri = null
+                        if (uri != null) viewModel.importBackup(uri)
+                    },
+                ) { Text("Restaurer") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        confirmRestore = false
+                        pendingRestoreUri = null
+                    },
+                ) { Text("Annuler") }
+            },
+        )
     }
 }

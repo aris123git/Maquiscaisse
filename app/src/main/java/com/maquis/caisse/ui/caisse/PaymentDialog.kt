@@ -111,8 +111,10 @@ fun PaymentDialog(
                                 )
                             }
                         }
-                        PaymentMode.MOBILE_MONEY,
-                        PaymentMode.VOUCHER,
+                        PaymentMode.ORANGE_MONEY,
+                        PaymentMode.MOOV_MONEY,
+                        PaymentMode.CARD,
+                        PaymentMode.TRANSFER,
                         PaymentMode.DEBT,
                         -> {
                             Text(
@@ -192,14 +194,14 @@ private fun MixedFields(
             onClick = { onSelectField(PaymentField.CASH) },
         )
         MixedFieldChip(
-            label = "Mobile Money",
+            label = "Orange Money",
             value = payment.mobileMoneyAmount,
             selected = payment.activeField == PaymentField.MOBILE_MONEY,
             enabled = enabled,
             onClick = { onSelectField(PaymentField.MOBILE_MONEY) },
         )
         MixedFieldChip(
-            label = "Avoir",
+            label = "Moov Money",
             value = payment.voucherAmount,
             selected = payment.activeField == PaymentField.VOUCHER,
             enabled = enabled,
@@ -257,7 +259,7 @@ private fun MixedFieldChip(
 private fun fieldLabel(payment: PaymentFormState): String = when (payment.activeField) {
     PaymentField.TENDERED -> "Montant reçu"
     PaymentField.CASH -> "Part espèces"
-    PaymentField.MOBILE_MONEY -> "Part Mobile Money"
-    PaymentField.VOUCHER -> "Part avoir"
+    PaymentField.MOBILE_MONEY -> "Part Orange Money"
+    PaymentField.VOUCHER -> "Part Moov Money"
     PaymentField.DEBT -> "Part dette"
 }

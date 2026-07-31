@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -69,6 +70,13 @@ fun ProductFormScreen(
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) onImagePicked(uri)
+    }
+
+    // Fallback si PickVisualMedia indisponible sur certains appareils.
+    val galleryLegacyLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
     ) { uri ->
         if (uri != null) onImagePicked(uri)
@@ -171,7 +179,17 @@ fun ProductFormScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FilledTonalButton(
-                    onClick = { galleryLauncher.launch("image/*") },
+                    onClick = {
+                        if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                ),
+                            )
+                        } else {
+                            galleryLegacyLauncher.launch("image/*")
+                        }
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp),

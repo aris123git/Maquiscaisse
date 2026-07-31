@@ -1,5 +1,7 @@
 package com.maquis.caisse.navigation
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -12,7 +14,7 @@ import com.maquis.caisse.ui.avoirs.AvoirsScreen
 import com.maquis.caisse.ui.caisse.CaisseScreen
 import com.maquis.caisse.ui.caissesession.CaisseSessionScreen
 import com.maquis.caisse.ui.commandes.CommandesScreen
-import com.maquis.caisse.ui.components.MaquisBottomBar
+import com.maquis.caisse.ui.components.MaquisSideBar
 import com.maquis.caisse.ui.dettes.DettesScreen
 import com.maquis.caisse.ui.parametres.ParametresScreen
 import com.maquis.caisse.ui.produits.ProduitsScreen
@@ -21,29 +23,35 @@ import com.maquis.caisse.ui.stock.StockScreen
 import com.maquis.caisse.ui.tables.TablesScreen
 
 /**
- * Graphe de navigation racine avec barre basse Caisse / Produits.
- * L'écran de démarrage reste la Caisse (usage quotidien).
+ * Shell paysage : sidebar gauche (comme Gestion_app) + contenu.
  */
 @Composable
 fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
-    Scaffold(
-        bottomBar = { MaquisBottomBar(navController) },
-    ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = Routes.CAISSE,
-            modifier = Modifier.padding(padding),
+    Scaffold { padding ->
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
         ) {
-            composable(Routes.CAISSE) { CaisseScreen() }
-            composable(Routes.PRODUITS) { ProduitsScreen() }
-            composable(Routes.TABLES) { TablesScreen() }
-            composable(Routes.COMMANDES) { CommandesScreen() }
-            composable(Routes.AVOIRS) { AvoirsScreen() }
-            composable(Routes.DETTES) { DettesScreen() }
-            composable(Routes.STOCK) { StockScreen() }
-            composable(Routes.CAISSE_SESSION) { CaisseSessionScreen() }
-            composable(Routes.RAPPORTS) { RapportsScreen() }
-            composable(Routes.PARAMETRES) { ParametresScreen() }
+            MaquisSideBar(navController)
+            NavHost(
+                navController = navController,
+                startDestination = Routes.CAISSE,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize(),
+            ) {
+                composable(Routes.CAISSE) { CaisseScreen() }
+                composable(Routes.PRODUITS) { ProduitsScreen() }
+                composable(Routes.TABLES) { TablesScreen() }
+                composable(Routes.COMMANDES) { CommandesScreen() }
+                composable(Routes.AVOIRS) { AvoirsScreen() }
+                composable(Routes.DETTES) { DettesScreen() }
+                composable(Routes.STOCK) { StockScreen() }
+                composable(Routes.CAISSE_SESSION) { CaisseSessionScreen() }
+                composable(Routes.RAPPORTS) { RapportsScreen() }
+                composable(Routes.PARAMETRES) { ParametresScreen() }
+            }
         }
     }
 }

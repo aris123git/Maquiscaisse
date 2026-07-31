@@ -47,10 +47,10 @@ class PaymentCalculatorTest {
     }
 
     @Test
-    fun mobileMoney_recordsFullTotal() {
+    fun orangeMoney_recordsFullTotal() {
         val result = PaymentCalculator.validate(
             total = 1500,
-            input = PaymentInput(mode = PaymentMode.MOBILE_MONEY),
+            input = PaymentInput(mode = PaymentMode.ORANGE_MONEY),
         ).getOrThrow()
         assertEquals(1500L, result.mobileMoneyAmount)
         assertEquals(0L, result.changeAmount)
@@ -58,7 +58,6 @@ class PaymentCalculatorTest {
 
     @Test
     fun mixed_withoutTendered_noPhantomChange() {
-        // Régression : ne pas calculer de monnaie si amountTendered non saisi.
         val result = PaymentCalculator.validate(
             total = 1000,
             input = PaymentInput(

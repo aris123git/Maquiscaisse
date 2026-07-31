@@ -32,7 +32,8 @@ class TicketFormatterTest {
         assertTrue(text.contains("Ticket #42"))
         assertTrue(text.contains("Bissap"))
         assertTrue(text.contains("TOTAL"))
-        assertTrue(text.contains("Espèces") || text.contains("Paiement"))
+        assertTrue(text.contains("Paiement"))
         assertTrue(text.contains("Monnaie"))
+        assertTrue(text.contains("GESTION CAISSE"))
     }
 }

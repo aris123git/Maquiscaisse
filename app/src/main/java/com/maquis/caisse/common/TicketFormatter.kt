@@ -12,7 +12,7 @@ object TicketFormatter {
     fun format(sale: Sale): String {
         val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
         return buildString {
-            appendLine("——— MAQUIS CAISSE ———")
+            appendLine("——— GESTION CAISSE ———")
             appendLine("Ticket #${sale.id}")
             appendLine(dateFormat.format(Date(sale.createdAtEpochMs)))
             appendLine("----------------------")
@@ -37,10 +37,10 @@ object TicketFormatter {
                         appendLine("Espèces : ${MoneyFormat.format(sale.cashAmount)}")
                     }
                     if (sale.mobileMoneyAmount > 0) {
-                        appendLine("Mobile Money : ${MoneyFormat.format(sale.mobileMoneyAmount)}")
+                        appendLine("Orange Money : ${MoneyFormat.format(sale.mobileMoneyAmount)}")
                     }
                     if (sale.voucherAmount > 0) {
-                        appendLine("Avoir : ${MoneyFormat.format(sale.voucherAmount)}")
+                        appendLine("Moov Money : ${MoneyFormat.format(sale.voucherAmount)}")
                     }
                     if (sale.debtAmount > 0) {
                         appendLine("Dette : ${MoneyFormat.format(sale.debtAmount)}")

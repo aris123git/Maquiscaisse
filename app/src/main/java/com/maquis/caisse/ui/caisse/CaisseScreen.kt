@@ -1,22 +1,23 @@
 package com.maquis.caisse.ui.caisse
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,9 +35,8 @@ import com.maquis.caisse.ui.components.NumericKeypad
 import com.maquis.caisse.ui.produits.ProductTile
 
 /**
- * Écran Caisse (Sprint 2) : grille → quantité → panier → paiement → ticket.
+ * Caisse paysage type Gestion_app : catalogue à gauche, panier à droite.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CaisseScreen(
     viewModel: CaisseViewModel = hiltViewModel(),
@@ -50,53 +50,91 @@ fun CaisseScreen(
         viewModel.consumeSnackbar()
     }
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Caisse") }) },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            if (state.products.isEmpty()) {
-                Box(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            // Catalogue (gauche)
+            Column(
+                modifier = Modifier
+                    .weight(1.2f)
+                    .fillMaxHeight()
+                    .padding(12.dp),
+            ) {
+                Text(
+                    text = "Caisse",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                OutlinedTextField(
+                    value = state.searchQuery,
+                    onValueChange = viewModel::onSearchQueryChange,
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "Aucun produit actif.\nAjoute-en dans l'onglet Produits.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(Constants.PRODUCT_GRID_COLUMNS),
-                    contentPadding = PaddingValues(8.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                ) {
-                    items(state.products, key = { it.id }) { product ->
-                        ProductTile(
-                            product = product,
-                            imageFile = viewModel.imageFile(product.imagePath),
-                            onClick = { viewModel.onProductTap(product) },
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    singleLine = true,
+                    placeholder = { Text("Rechercher un produit…") },
+                )
+
+                if (state.filteredProducts.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = if (state.products.isEmpty()) {
+                                "Aucun produit actif.\nAjoute-en dans Produits."
+                            } else {
+                                "Aucun résultat"
+                            },
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(Constants.CAISSE_GRID_COLUMNS),
+                        contentPadding = PaddingValues(4.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        items(state.filteredProducts, key = { it.id }) { product ->
+                            ProductTile(
+                                product = product,
+                                imageFile = viewModel.imageFile(product.imagePath),
+                                onClick = { viewModel.onProductTap(product) },
+                            )
+                        }
                     }
                 }
             }
 
-            CartPanel(
-                lines = state.cart,
-                total = state.cartTotal,
-                onLineLongPress = viewModel::onCartLineLongPress,
-                onValidate = viewModel::openPayment,
-            )
+            // Panier (droite)
+            Surface(
+                tonalElevation = 2.dp,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.surface),
+            ) {
+                CartPanel(
+                    lines = state.cart,
+                    total = state.cartTotal,
+                    onLineLongPress = viewModel::onCartLineLongPress,
+                    onValidate = viewModel::openPayment,
+                    onClear = viewModel::clearCart,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp),
+        )
     }
 
     state.quantityOverlay?.let { overlay ->
@@ -107,7 +145,7 @@ fun CaisseScreen(
                 decorFitsSystemWindows = true,
             ),
         ) {
-            Surface(modifier = Modifier.fillMaxWidth()) {
+            Surface(modifier = Modifier.fillMaxWidth(0.45f)) {
                 NumericKeypad(
                     value = overlay.quantityInput,
                     onValueChange = viewModel::onQuantityInputChange,

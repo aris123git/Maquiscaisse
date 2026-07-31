@@ -6,25 +6,28 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.domain.model.CartLine
+import com.maquis.caisse.ui.theme.GestionSuccess
 
 /**
- * Panier toujours visible en bas de l'écran caisse.
- * Long-press sur une ligne → rouvre le pavé (édition / suppression).
+ * Panier caisse (panneau droit en paysage), comme Gestion_app.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -34,28 +37,44 @@ fun CartPanel(
     onLineLongPress: (CartLine) -> Unit,
     onValidate: () -> Unit,
     modifier: Modifier = Modifier,
+    onClear: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(16.dp),
     ) {
-        Text(
-            text = if (lines.isEmpty()) {
-                "Panier vide — tape un produit"
-            } else {
-                "Panier (${lines.sumOf { it.quantity }})"
-            },
-            style = MaterialTheme.typography.titleLarge,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (lines.isEmpty()) "Panier" else "Panier (${lines.sumOf { it.quantity }})",
+                style = MaterialTheme.typography.headlineMedium,
+            )
+            if (onClear != null && lines.isNotEmpty()) {
+                TextButton(onClick = onClear) {
+                    Text("Vider", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
 
-        if (lines.isNotEmpty()) {
+        if (lines.isEmpty()) {
+            Text(
+                text = "Tape un produit à gauche pour l'ajouter",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            Spacer(modifier = Modifier.weight(1f))
+        } else {
             LazyColumn(
                 modifier = Modifier
+                    .weight(1f)
                     .fillMaxWidth()
-                    .heightIn(max = 140.dp)
-                    .padding(top = 4.dp),
+                    .padding(top = 8.dp),
             ) {
                 items(lines, key = { it.productId }) { line ->
                     Row(
@@ -65,18 +84,21 @@ fun CartPanel(
                                 onClick = { onLineLongPress(line) },
                                 onLongClick = { onLineLongPress(line) },
                             )
-                            .padding(vertical = 6.dp),
+                            .padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "${line.quantity}× ${line.productName}",
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(line.productName, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "${line.quantity} × ${MoneyFormat.format(line.unitPrice)}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         Text(
                             text = MoneyFormat.format(line.lineTotal),
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -89,25 +111,26 @@ fun CartPanel(
             )
         }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Text(
+            text = MoneyFormat.format(total),
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+        )
+
+        Button(
+            onClick = onValidate,
+            enabled = lines.isNotEmpty(),
+            colors = ButtonDefaults.buttonColors(containerColor = GestionSuccess),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp),
         ) {
-            Text(
-                text = MoneyFormat.format(total),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Button(
-                onClick = onValidate,
-                enabled = lines.isNotEmpty(),
-                modifier = Modifier.heightIn(min = 52.dp),
-            ) {
-                Text("Valider", style = MaterialTheme.typography.titleLarge)
-            }
+            Text("Encaisser", style = MaterialTheme.typography.titleLarge)
         }
     }
 }

@@ -84,6 +84,7 @@ enum class PaymentField {
 
 data class CaisseUiState(
     val products: List<Product> = emptyList(),
+    val searchQuery: String = "",
     val cart: List<CartLine> = emptyList(),
     val quantityOverlay: QuantityOverlay? = null,
     val showPayment: Boolean = false,
@@ -92,6 +93,16 @@ data class CaisseUiState(
     val snackbarMessage: String? = null,
 ) {
     val cartTotal: Long get() = CartOperations.total(cart)
+
+    val filteredProducts: List<Product>
+        get() {
+            val q = searchQuery.trim()
+            if (q.isEmpty()) return products
+            return products.filter {
+                it.name.contains(q, ignoreCase = true) ||
+                    it.category.contains(q, ignoreCase = true)
+            }
+        }
 }
 
 @HiltViewModel
@@ -121,6 +132,10 @@ class CaisseViewModel @Inject constructor(
     }
 
     fun imageFile(relativePath: String?): File? = resolveImage(relativePath)
+
+    fun onSearchQueryChange(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+    }
 
     fun onProductTap(product: Product) {
         if (product.salePrice <= 0L) {
@@ -345,6 +360,10 @@ class CaisseViewModel @Inject constructor(
 
     fun dismissTicket() {
         _uiState.update { it.copy(completedSale = null) }
+    }
+
+    fun clearCart() {
+        setCart(emptyList())
     }
 
     fun consumeSnackbar() {

@@ -11,6 +11,7 @@ object Constants {
     const val MAX_MONEY_DIGITS = 9
     const val MAX_STOCK_DIGITS = 7
 
-    /** Nombre de colonnes de la grille produits (usage une main / tuiles larges). */
-    const val PRODUCT_GRID_COLUMNS = 2
+    /** Grille produits en paysage (comme catalogue Gestion_app). */
+    const val PRODUCT_GRID_COLUMNS = 3
+    const val CAISSE_GRID_COLUMNS = 3
 }

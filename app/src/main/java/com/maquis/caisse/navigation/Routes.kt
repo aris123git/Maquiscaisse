@@ -9,6 +9,7 @@ object Routes {
     const val TABLES = "tables"
     const val STOCK = "stock"
     const val DASHBOARD = "dashboard"
+    const val ASSISTANT = "assistant"
     const val RAPPORTS = "rapports"
     const val UTILISATEURS = "utilisateurs"
     const val PARAMETRES = "parametres"

@@ -30,6 +30,8 @@ interface UserRepository {
     suspend fun deactivate(userId: Long)
     suspend fun login(name: String, pin: String): AppUser?
     suspend fun countActiveAdmins(): Int
+    /** Change le PIN d'un utilisateur (soi-même ou admin pour un autre). */
+    suspend fun changePin(userId: Long, newPin: String)
 }
 
 interface StockRepository {

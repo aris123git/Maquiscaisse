@@ -26,6 +26,32 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): ProductEntity?
 
+    @Query(
+        """
+        SELECT * FROM products
+        WHERE is_active = 1 AND stock <= alert_threshold
+        ORDER BY stock ASC
+        LIMIT 30
+        """,
+    )
+    suspend fun listLowStock(): List<ProductEntity>
+
+    @Query(
+        """
+        SELECT * FROM products
+        WHERE is_active = 1
+          AND id NOT IN (
+            SELECT DISTINCT product_id FROM order_items oi
+            INNER JOIN orders o ON o.id = oi.order_id
+            WHERE o.created_at >= :sinceMs
+              AND o.status != 'ANNULEE'
+          )
+        ORDER BY name COLLATE NOCASE ASC
+        LIMIT 12
+        """,
+    )
+    suspend fun listDormantSince(sinceMs: Long): List<ProductEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(product: ProductEntity): Long
 

@@ -9,12 +9,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -23,6 +25,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -33,6 +37,7 @@ import com.maquis.caisse.domain.model.AppUser
 import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.ui.common.DropdownField
+import com.maquis.caisse.ui.theme.GestionBlue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -107,6 +112,25 @@ class UsersViewModel @Inject constructor(
         }
     }
 
+    fun changePin(userId: Long, newPin: String, confirm: String) = viewModelScope.launch {
+        if (newPin != confirm) {
+            _message.value = "Les deux codes ne correspondent pas"
+            return@launch
+        }
+        val current = session.userOrNull() ?: return@launch
+        val isSelf = current.id == userId
+        if (!isSelf && !session.can(Permissions.MANAGE_USERS)) {
+            _message.value = "Seul un admin peut modifier le code d'un autre"
+            return@launch
+        }
+        try {
+            userRepository.changePin(userId, newPin)
+            _message.value = if (isSelf) "Ton code a été modifié" else "Code utilisateur mis à jour"
+        } catch (e: Exception) {
+            _message.value = e.message ?: "Échec modification du code"
+        }
+    }
+
     fun switchUser(user: AppUser) {
         session.setUser(user)
         _message.update { "Session : ${user.name}" }
@@ -114,10 +138,6 @@ class UsersViewModel @Inject constructor(
 
     fun logout() {
         session.logout()
-    }
-
-    fun consumeMessage() {
-        _message.value = null
     }
 }
 
@@ -127,9 +147,11 @@ fun UsersScreen(viewModel: UsersViewModel = hiltViewModel()) {
     val current by viewModel.currentUser.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     var name by remember { mutableStateOf("") }
-    var pin by remember { mutableStateOf("1234") }
+    var pin by remember { mutableStateOf("") }
     var role by remember { mutableStateOf(UserRoleOption.SERVEUSE) }
     var toDelete by remember { mutableStateOf<AppUser?>(null) }
+    var pinTarget by remember { mutableStateOf<AppUser?>(null) }
+    var changeOwnPin by remember { mutableStateOf(false) }
     val canManage = viewModel.canManage()
 
     Column(
@@ -138,66 +160,74 @@ fun UsersScreen(viewModel: UsersViewModel = hiltViewModel()) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Utilisateurs & permissions", style = MaterialTheme.typography.headlineMedium)
+        Text("Utilisateurs", style = MaterialTheme.typography.headlineMedium, color = GestionBlue)
         Text(
             "Session : ${current?.name ?: "—"} (${current?.role ?: "—"})",
             color = MaterialTheme.colorScheme.primary,
         )
         Text(
-            "Les comptes sont créés par l'administrateur. Chaque personne se connecte avec son nom + PIN.",
+            "Les comptes sont créés par l'administrateur. Les codes PIN restent masqués.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
+        OutlinedButton(
+            onClick = { changeOwnPin = true },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            shape = RoundedCornerShape(14.dp),
+        ) { Text("Changer mon code PIN") }
+
         if (canManage) {
-            Text("Créer un compte", style = MaterialTheme.typography.titleMedium)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White.copy(alpha = 0.9f),
+                tonalElevation = 1.dp,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nom") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = pin,
-                    onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6) },
-                    label = { Text("PIN") },
-                    modifier = Modifier.weight(0.6f),
-                    singleLine = true,
-                )
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Créer un compte", style = MaterialTheme.typography.titleMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("Nom") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = pin,
+                            onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6) },
+                            label = { Text("PIN initial") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.weight(0.7f),
+                            singleLine = true,
+                        )
+                    }
+                    DropdownField(
+                        label = "Rôle",
+                        selected = role,
+                        options = UserRoleOption.entries,
+                        optionLabel = { it.label },
+                        onSelect = { if (it != null) role = it },
+                    )
+                    Button(
+                        onClick = {
+                            viewModel.add(name, pin, role)
+                            name = ""
+                            pin = ""
+                        },
+                        enabled = name.isNotBlank() && pin.length >= 4,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                    ) { Text("Créer le compte") }
+                }
             }
-            DropdownField(
-                label = "Rôle",
-                selected = role,
-                options = UserRoleOption.entries,
-                optionLabel = { it.label },
-                onSelect = { if (it != null) role = it },
-            )
-            Button(
-                onClick = {
-                    viewModel.add(name, pin, role)
-                    name = ""
-                    pin = "1234"
-                },
-                enabled = name.isNotBlank() && pin.length >= 4,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 52.dp),
-            ) { Text("Créer le compte") }
-        } else {
-            Text(
-                "Demande à un administrateur de créer ou supprimer un compte.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
 
-        message?.let {
-            Text(it, color = MaterialTheme.colorScheme.primary)
-        }
+        message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
 
         HorizontalDivider()
         LazyColumn(modifier = Modifier.weight(1f)) {
@@ -206,25 +236,23 @@ fun UsersScreen(viewModel: UsersViewModel = hiltViewModel()) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "${user.name} · ${user.role}" +
                                 if (user.isWaitress) " · serveuse" else "",
                         )
-                        Text(
-                            user.permissions.take(5).joinToString(", "),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                     OutlinedButton(onClick = { viewModel.switchUser(user) }) {
                         Text(if (user.id == current?.id) "Actif" else "Utiliser")
                     }
+                    if (canManage) {
+                        TextButton(onClick = { pinTarget = user }) { Text("Code") }
+                    }
                     if (canManage && user.id != current?.id) {
                         TextButton(onClick = { toDelete = user }) {
-                            Text("Supprimer", color = MaterialTheme.colorScheme.error)
+                            Text("Suppr.", color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -234,30 +262,88 @@ fun UsersScreen(viewModel: UsersViewModel = hiltViewModel()) {
 
         OutlinedButton(
             onClick = { viewModel.logout() },
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            shape = RoundedCornerShape(14.dp),
         ) { Text("Se déconnecter") }
+    }
+
+    if (changeOwnPin) {
+        current?.let { me ->
+            PinChangeDialog(
+                title = "Changer mon code",
+                onDismiss = { changeOwnPin = false },
+                onConfirm = { a, b ->
+                    viewModel.changePin(me.id, a, b)
+                    changeOwnPin = false
+                },
+            )
+        }
+    }
+
+    pinTarget?.let { user ->
+        PinChangeDialog(
+            title = "Nouveau code pour ${user.name}",
+            onDismiss = { pinTarget = null },
+            onConfirm = { a, b ->
+                viewModel.changePin(user.id, a, b)
+                pinTarget = null
+            },
+        )
     }
 
     toDelete?.let { user ->
         AlertDialog(
             onDismissRequest = { toDelete = null },
             title = { Text("Supprimer ${user.name} ?") },
-            text = {
-                Text("Le compte sera désactivé et ne pourra plus se connecter. L'historique des ventes reste intact.")
-            },
+            text = { Text("Le compte sera désactivé. L'historique reste intact.") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.delete(user)
-                        toDelete = null
-                    },
-                ) { Text("Supprimer") }
+                TextButton(onClick = {
+                    viewModel.delete(user)
+                    toDelete = null
+                }) { Text("Supprimer") }
             },
-            dismissButton = {
-                TextButton(onClick = { toDelete = null }) { Text("Annuler") }
-            },
+            dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Annuler") } },
         )
     }
+}
+
+@Composable
+private fun PinChangeDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit,
+) {
+    var pin by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6) },
+                    label = { Text("Nouveau code") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = confirm,
+                    onValueChange = { confirm = it.filter { c -> c.isDigit() }.take(6) },
+                    label = { Text("Confirmer") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(pin, confirm) },
+                enabled = pin.length >= 4 && confirm.length >= 4,
+            ) { Text("Valider") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
 }

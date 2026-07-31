@@ -1,19 +1,23 @@
 package com.maquis.caisse.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 private val LightColors = lightColorScheme(
     primary = GestionBlue,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFDBEAFE),
-    onPrimaryContainer = Color(0xFF1E3A8A),
-    secondary = GestionSuccess,
+    primaryContainer = Color(0xFFD9E8FF),
+    onPrimaryContainer = Color(0xFF0A2A66),
+    secondary = GestionCyan,
     onSecondary = Color.White,
+    tertiary = GestionSuccess,
     error = GestionDanger,
     onError = Color.White,
     background = LightBackground,
@@ -25,23 +29,26 @@ private val LightColors = lightColorScheme(
     outline = LightBorder,
 )
 
-private val DarkColors = darkColorScheme(
-    primary = GestionBlue,
-    onPrimary = Color.White,
-    secondary = GestionSuccess,
-    error = GestionDanger,
-    background = DarkBackground,
-    onBackground = DarkOnSurface,
-    surface = DarkSurface,
-    onSurface = DarkOnSurface,
-)
-
-/** Thème Gestion : bleu #2563eb, clair par défaut (comme l'app desktop). */
+/** Thème lumineux forcé (comptoir) — fond dégradé vivant. */
 @Composable
 fun MaquisCaisseTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val colors = if (darkTheme) DarkColors else LightColors
-    MaterialTheme(colorScheme = colors, typography = MaquisTypography, content = content)
+    MaterialTheme(colorScheme = LightColors, typography = MaquisTypography) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            LightBackground,
+                            LightBackgroundEnd,
+                            Color(0xFFE3F2FD),
+                        ),
+                    ),
+                ),
+        ) {
+            content()
+        }
+    }
 }

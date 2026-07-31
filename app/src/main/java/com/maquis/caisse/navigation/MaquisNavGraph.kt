@@ -6,12 +6,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.maquis.caisse.ui.assistant.AssistantScreen
 import com.maquis.caisse.ui.caisse.CaisseScreen
 import com.maquis.caisse.ui.categories.CategoriesScreen
 import com.maquis.caisse.ui.commandes.CommandesScreen
@@ -28,7 +30,7 @@ import com.maquis.caisse.ui.users.UsersScreen
 
 @Composable
 fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
-    Scaffold { padding ->
+    Scaffold(containerColor = Color.Transparent) { padding ->
         Row(
             modifier = Modifier
                 .fillMaxSize()
@@ -70,6 +72,7 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
                     )
                 }
                 composable(Routes.DASHBOARD) { DashboardScreen() }
+                composable(Routes.ASSISTANT) { AssistantScreen() }
                 composable(Routes.PRODUITS) { ProduitsScreen() }
                 composable(Routes.CATEGORIES) { CategoriesScreen() }
                 composable(Routes.TABLES) { TablesScreen() }

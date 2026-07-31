@@ -84,6 +84,35 @@ class UserRepositoryImpl @Inject constructor(
         dao.countActiveAdmins()
     }
 
+    override suspend fun changePin(userId: Long, newPin: String) {
+        withContext(Dispatchers.IO) {
+            require(newPin.length >= 4 && newPin.all { it.isDigit() }) {
+                "PIN d'au moins 4 chiffres"
+            }
+            val target = dao.getById(userId) ?: error("Utilisateur introuvable")
+            require(target.isActive) { "Compte inactif" }
+            val updated = target.copy(pin = newPin)
+            dao.update(updated)
+            val actor = session.userOrNull()
+            auditLogDao.insert(
+                AuditLogEntity(
+                    userId = actor?.id,
+                    userName = actor?.name ?: "Système",
+                    action = "CHANGE_PIN",
+                    details = if (actor?.id == userId) {
+                        "${target.name} a modifié son code PIN"
+                    } else {
+                        "${actor?.name ?: "Admin"} a réinitialisé le PIN de ${target.name}"
+                    },
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+            if (actor?.id == userId) {
+                session.setUser(updated.toDomain())
+            }
+        }
+    }
+
     private fun UserEntity.toDomain() = AppUser(
         id = id,
         name = name,

@@ -31,6 +31,12 @@ interface UserDao {
     @Update
     suspend fun update(entity: UserEntity)
 
+    @Query("UPDATE users SET is_active = 0 WHERE id = :id")
+    suspend fun deactivate(id: Long)
+
+    @Query("SELECT COUNT(*) FROM users WHERE is_active = 1 AND role = 'ADMIN'")
+    suspend fun countActiveAdmins(): Int
+
     @Query("SELECT COUNT(*) FROM users")
     suspend fun count(): Int
 }

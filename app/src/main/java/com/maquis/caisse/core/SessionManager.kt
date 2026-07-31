@@ -1,7 +1,6 @@
 package com.maquis.caisse.core
 
 import com.maquis.caisse.domain.model.AppUser
-import com.maquis.caisse.domain.model.Permissions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -9,28 +8,27 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Utilisateur courant (session locale).
- * Par défaut : Admin (toutes permissions) pour ne pas bloquer le maquis.
+ * Session locale : l'utilisateur doit se connecter (compte créé par l'admin).
  */
 @Singleton
 class SessionManager @Inject constructor() {
-    private val _currentUser = MutableStateFlow(
-        AppUser(
-            id = 1L,
-            name = "Admin",
-            pin = "0000",
-            role = "ADMIN",
-            permissions = Permissions.ADMIN_DEFAULT.toSet(),
-            isWaitress = false,
-        ),
-    )
-    val currentUser: StateFlow<AppUser> = _currentUser.asStateFlow()
+    private val _currentUser = MutableStateFlow<AppUser?>(null)
+    val currentUser: StateFlow<AppUser?> = _currentUser.asStateFlow()
+
+    fun userOrNull(): AppUser? = _currentUser.value
 
     fun user(): AppUser = _currentUser.value
+        ?: error("Aucun utilisateur connecté")
+
+    fun isLoggedIn(): Boolean = _currentUser.value != null
 
     fun setUser(user: AppUser) {
         _currentUser.value = user
     }
 
-    fun can(permission: String): Boolean = user().can(permission)
+    fun logout() {
+        _currentUser.value = null
+    }
+
+    fun can(permission: String): Boolean = userOrNull()?.can(permission) == true
 }

@@ -26,7 +26,10 @@ interface UserRepository {
     suspend fun listWaitresses(): List<AppUser>
     suspend fun add(user: AppUser): Long
     suspend fun update(user: AppUser)
+    /** Désactive le compte (soft delete). Impossible de supprimer le dernier admin. */
+    suspend fun deactivate(userId: Long)
     suspend fun login(name: String, pin: String): AppUser?
+    suspend fun countActiveAdmins(): Int
 }
 
 interface StockRepository {

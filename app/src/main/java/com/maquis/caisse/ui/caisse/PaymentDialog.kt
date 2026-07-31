@@ -79,7 +79,7 @@ fun PaymentDialog(
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        PaymentMode.entries.forEach { mode ->
+                        (PaymentMode.PAYMENT_CHOICES + PaymentMode.DEBT).forEach { mode ->
                             FilterChip(
                                 selected = payment.mode == mode,
                                 onClick = { if (!payment.isSaving) onSelectMode(mode) },
@@ -113,8 +113,9 @@ fun PaymentDialog(
                         }
                         PaymentMode.ORANGE_MONEY,
                         PaymentMode.MOOV_MONEY,
+                        PaymentMode.WAVE,
                         PaymentMode.CARD,
-                        PaymentMode.TRANSFER,
+                        PaymentMode.OTHER,
                         PaymentMode.DEBT,
                         -> {
                             Text(

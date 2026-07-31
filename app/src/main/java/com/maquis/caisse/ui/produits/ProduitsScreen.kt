@@ -63,6 +63,9 @@ fun ProduitsScreen(
                 ProductFormScreen(
                     form = form,
                     existingImageFile = viewModel.imageFile(form.existingImagePath),
+                    categoryOptions = state.categories.ifEmpty {
+                        listOf("Boissons", "Plats", "Grillades", "Poissons", "Viandes", "Accompagnements", "Desserts", "Divers")
+                    },
                     onBack = viewModel::closeForm,
                     onUpdate = viewModel::updateForm,
                     onImagePicked = viewModel::onImagePicked,

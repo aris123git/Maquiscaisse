@@ -1,0 +1,40 @@
+package com.maquis.caisse.domain.repository
+
+import com.maquis.caisse.domain.model.CategorySalesRow
+import com.maquis.caisse.domain.model.CreateOrderRequest
+import com.maquis.caisse.domain.model.DashboardStats
+import com.maquis.caisse.domain.model.Order
+import com.maquis.caisse.domain.model.OrderLine
+import com.maquis.caisse.domain.model.OrderStatus
+import com.maquis.caisse.domain.model.PaymentMode
+import com.maquis.caisse.domain.model.ProductSalesRow
+import com.maquis.caisse.domain.model.WaitressStats
+import kotlinx.coroutines.flow.Flow
+
+interface OrderRepository {
+    fun observeOpenOrders(): Flow<List<Order>>
+    fun observeFiltered(
+        query: String,
+        status: OrderStatus?,
+        waitressId: Long?,
+        fromMs: Long,
+        toMs: Long,
+    ): Flow<List<Order>>
+
+    suspend fun getOrder(id: Long): Order?
+    suspend fun getByPublicId(publicId: String): Order?
+    suspend fun createOrder(request: CreateOrderRequest): Order
+    suspend fun updateOrderItems(orderId: Long, lines: List<OrderLine>): Order
+    suspend fun cancelOrder(orderId: Long): Order
+    suspend fun payOrder(
+        orderId: Long,
+        mode: PaymentMode,
+        amount: Long,
+        amountTendered: Long,
+    ): Order
+
+    suspend fun waitressStats(fromMs: Long, toMs: Long, waitressId: Long?): List<WaitressStats>
+    suspend fun categorySales(fromMs: Long, toMs: Long, waitressId: Long?): List<CategorySalesRow>
+    suspend fun productSales(fromMs: Long, toMs: Long, waitressId: Long?): List<ProductSalesRow>
+    suspend fun dashboard(fromMs: Long, toMs: Long): DashboardStats
+}

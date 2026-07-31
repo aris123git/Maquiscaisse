@@ -3,7 +3,9 @@ package com.maquis.caisse.ui.produits
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.maquis.caisse.domain.model.Category
 import com.maquis.caisse.domain.model.Product
+import com.maquis.caisse.domain.repository.CategoryRepository
 import com.maquis.caisse.domain.usecase.AddProductUseCase
 import com.maquis.caisse.domain.usecase.DeleteProductUseCase
 import com.maquis.caisse.domain.usecase.ObserveProductsUseCase
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -24,7 +27,7 @@ import javax.inject.Inject
 data class ProductFormState(
     val editingId: Long? = null,
     val name: String = "",
-    val category: String = "",
+    val category: String = "Boissons",
     val salePrice: String = "",
     val purchasePrice: String = "",
     val stock: String = "0",
@@ -41,6 +44,7 @@ data class ProductFormState(
 
 data class ProduitsUiState(
     val products: List<Product> = emptyList(),
+    val categories: List<String> = emptyList(),
     val form: ProductFormState? = null,
     val snackbarMessage: String? = null,
 )
@@ -48,6 +52,7 @@ data class ProduitsUiState(
 @HiltViewModel
 class ProduitsViewModel @Inject constructor(
     observeProducts: ObserveProductsUseCase,
+    categoryRepository: CategoryRepository,
     private val addProduct: AddProductUseCase,
     private val updateProduct: UpdateProductUseCase,
     private val deleteProduct: DeleteProductUseCase,
@@ -55,6 +60,10 @@ class ProduitsViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val productsFlow: StateFlow<List<Product>> = observeProducts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val categoriesFlow: StateFlow<List<String>> = categoryRepository.observeActive()
+        .map { list -> list.map(Category::name) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _uiState = MutableStateFlow(ProduitsUiState())
@@ -66,12 +75,28 @@ class ProduitsViewModel @Inject constructor(
                 _uiState.update { it.copy(products = products) }
             }
         }
+        viewModelScope.launch {
+            categoriesFlow.collect { categories ->
+                _uiState.update { state ->
+                    val form = state.form
+                    state.copy(
+                        categories = categories,
+                        form = if (form != null && form.category.isBlank() && categories.isNotEmpty()) {
+                            form.copy(category = categories.first())
+                        } else {
+                            form
+                        },
+                    )
+                }
+            }
+        }
     }
 
     fun imageFile(relativePath: String?): File? = resolveImage(relativePath)
 
     fun openCreateForm() {
-        _uiState.update { it.copy(form = ProductFormState()) }
+        val defaultCategory = _uiState.value.categories.firstOrNull() ?: "Boissons"
+        _uiState.update { it.copy(form = ProductFormState(category = defaultCategory)) }
     }
 
     fun openEditForm(product: Product) {

@@ -1,6 +1,7 @@
 package com.maquis.caisse.ui.caisse
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,14 +32,16 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.core.Constants
+import com.maquis.caisse.ui.common.DropdownField
 import com.maquis.caisse.ui.components.NumericKeypad
 import com.maquis.caisse.ui.produits.ProductTile
 
 /**
- * Caisse paysage type Gestion_app : catalogue à gauche, panier à droite.
+ * Caisse paysage type Gestion_app : catalogue à gauche, panier compact à droite.
  */
 @Composable
 fun CaisseScreen(
+    onOrderCreated: (Long) -> Unit = {},
     viewModel: CaisseViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -52,24 +55,51 @@ fun CaisseScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Row(modifier = Modifier.fillMaxSize()) {
-            // Catalogue (gauche)
+            // Catalogue (gauche) — élargi pour compenser panier réduit
             Column(
                 modifier = Modifier
-                    .weight(1.2f)
+                    .weight(1.85f)
                     .fillMaxHeight()
-                    .padding(12.dp),
+                    .padding(10.dp),
             ) {
                 Text(
                     text = "Caisse",
                     style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.padding(bottom = 8.dp),
+                    modifier = Modifier.padding(bottom = 6.dp),
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    DropdownField(
+                        label = "Serveuse",
+                        selected = state.selectedWaitress,
+                        options = state.waitresses,
+                        optionLabel = { it.name },
+                        onSelect = viewModel::selectWaitress,
+                        allowNull = true,
+                        nullLabel = "Aucune",
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (state.tablesEnabled) {
+                        DropdownField(
+                            label = "Table",
+                            selected = state.selectedTable,
+                            options = state.tables,
+                            optionLabel = { it.label },
+                            onSelect = viewModel::selectTable,
+                            allowNull = true,
+                            nullLabel = "Aucune",
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = state.searchQuery,
                     onValueChange = viewModel::onSearchQueryChange,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 8.dp),
+                        .padding(bottom = 6.dp),
                     singleLine = true,
                     placeholder = { Text("Rechercher un produit…") },
                 )
@@ -94,7 +124,7 @@ fun CaisseScreen(
                 } else {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(Constants.CAISSE_GRID_COLUMNS),
-                        contentPadding = PaddingValues(4.dp),
+                        contentPadding = PaddingValues(2.dp),
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
@@ -110,11 +140,11 @@ fun CaisseScreen(
                 }
             }
 
-            // Panier (droite)
+            // Panier (droite) — réduit ~1/3
             Surface(
                 tonalElevation = 2.dp,
                 modifier = Modifier
-                    .weight(1f)
+                    .weight(0.72f)
                     .fillMaxHeight()
                     .background(MaterialTheme.colorScheme.surface),
             ) {
@@ -124,6 +154,9 @@ fun CaisseScreen(
                     onLineLongPress = viewModel::onCartLineLongPress,
                     onValidate = viewModel::openPayment,
                     onClear = viewModel::clearCart,
+                    onSaveOrder = {
+                        viewModel.saveUnpaidOrder(onCreated = onOrderCreated)
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }

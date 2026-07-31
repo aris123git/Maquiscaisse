@@ -52,6 +52,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.maquis.caisse.core.Constants
+import com.maquis.caisse.ui.common.DropdownField
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,6 +60,7 @@ import java.io.File
 fun ProductFormScreen(
     form: ProductFormState,
     existingImageFile: File?,
+    categoryOptions: List<String>,
     onBack: () -> Unit,
     onUpdate: ((ProductFormState) -> ProductFormState) -> Unit,
     onImagePicked: (Uri) -> Unit,
@@ -223,12 +225,13 @@ fun ProductFormScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
-                value = form.category,
-                onValueChange = { value -> onUpdate { it.copy(category = value) } },
-                label = { Text("Catégorie") },
-                singleLine = true,
-                placeholder = { Text("Ex: Boissons, Plats…") },
+            DropdownField(
+                label = "Catégorie",
+                selected = form.category.ifBlank { null },
+                options = categoryOptions,
+                optionLabel = { it },
+                onSelect = { value -> onUpdate { it.copy(category = value.orEmpty()) } },
+                allowNull = false,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(

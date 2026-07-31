@@ -28,7 +28,6 @@ import com.maquis.caisse.ui.theme.SidebarText
 
 private data class NavItem(val route: String, val label: String)
 
-/** Navigation latérale type Gestion_app (paysage). */
 @Composable
 fun MaquisSideBar(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -36,36 +35,36 @@ fun MaquisSideBar(navController: NavHostController) {
 
     val items = listOf(
         NavItem(Routes.CAISSE, "Caisse"),
+        NavItem(Routes.COMMANDES, "Commandes"),
+        NavItem(Routes.HISTORIQUE, "Historique"),
+        NavItem(Routes.DASHBOARD, "Tableau de bord"),
         NavItem(Routes.PRODUITS, "Produits"),
+        NavItem(Routes.CATEGORIES, "Catégories"),
+        NavItem(Routes.TABLES, "Tables"),
         NavItem(Routes.STOCK, "Stock"),
-        NavItem(Routes.DETTES, "Clients / Dettes"),
-        NavItem(Routes.AVOIRS, "Avoirs"),
         NavItem(Routes.RAPPORTS, "Rapports"),
+        NavItem(Routes.UTILISATEURS, "Utilisateurs"),
         NavItem(Routes.PARAMETRES, "Paramètres"),
     )
 
     Column(
         modifier = Modifier
-            .width(200.dp)
+            .width(188.dp)
             .fillMaxHeight()
             .background(SidebarDark)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 16.dp),
+            .padding(horizontal = 10.dp, vertical = 12.dp),
     ) {
+        Text("Gestion", style = MaterialTheme.typography.titleLarge, color = Color.White)
         Text(
-            text = "Gestion",
-            style = MaterialTheme.typography.titleLarge,
-            color = Color.White,
-        )
-        Text(
-            text = "Caisse · Commerce",
+            "Maquis · Caisse",
             style = MaterialTheme.typography.labelLarge,
             color = SidebarText,
-            modifier = Modifier.padding(bottom = 16.dp),
+            modifier = Modifier.padding(bottom = 12.dp),
         )
-
         items.forEach { item ->
-            val selected = currentRoute == item.route
+            val selected = currentRoute == item.route ||
+                (item.route == Routes.COMMANDES && currentRoute?.startsWith("order_detail") == true)
             TextButton(
                 onClick = {
                     if (currentRoute != item.route) {
@@ -77,26 +76,17 @@ fun MaquisSideBar(navController: NavHostController) {
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(44.dp),
                 colors = ButtonDefaults.textButtonColors(
                     containerColor = if (selected) GestionBlue else Color.Transparent,
                     contentColor = if (selected) Color.White else SidebarText,
                 ),
             ) {
-                Text(
-                    text = item.label,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Text(item.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.fillMaxWidth())
             }
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
         }
-
         Spacer(modifier = Modifier.weight(1f))
-        Text(
-            text = "Offline",
-            style = MaterialTheme.typography.labelLarge,
-            color = SidebarText,
-        )
+        Text("Offline", style = MaterialTheme.typography.labelLarge, color = SidebarText)
     }
 }

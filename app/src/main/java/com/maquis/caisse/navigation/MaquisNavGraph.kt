@@ -7,24 +7,25 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.maquis.caisse.ui.avoirs.AvoirsScreen
+import androidx.navigation.navArgument
 import com.maquis.caisse.ui.caisse.CaisseScreen
-import com.maquis.caisse.ui.caissesession.CaisseSessionScreen
+import com.maquis.caisse.ui.categories.CategoriesScreen
 import com.maquis.caisse.ui.commandes.CommandesScreen
+import com.maquis.caisse.ui.commandes.HistoriqueScreen
+import com.maquis.caisse.ui.commandes.OrderDetailScreen
 import com.maquis.caisse.ui.components.MaquisSideBar
-import com.maquis.caisse.ui.dettes.DettesScreen
+import com.maquis.caisse.ui.dashboard.DashboardScreen
 import com.maquis.caisse.ui.parametres.ParametresScreen
 import com.maquis.caisse.ui.produits.ProduitsScreen
 import com.maquis.caisse.ui.rapports.RapportsScreen
 import com.maquis.caisse.ui.stock.StockScreen
 import com.maquis.caisse.ui.tables.TablesScreen
+import com.maquis.caisse.ui.users.UsersScreen
 
-/**
- * Shell paysage : sidebar gauche (comme Gestion_app) + contenu.
- */
 @Composable
 fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
     Scaffold { padding ->
@@ -41,15 +42,40 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
                     .weight(1f)
                     .fillMaxSize(),
             ) {
-                composable(Routes.CAISSE) { CaisseScreen() }
+                composable(Routes.CAISSE) {
+                    CaisseScreen(
+                        onOrderCreated = { id ->
+                            navController.navigate(Routes.orderDetail(id))
+                        },
+                    )
+                }
+                composable(Routes.COMMANDES) {
+                    CommandesScreen(
+                        onOpenOrder = { id -> navController.navigate(Routes.orderDetail(id)) },
+                    )
+                }
+                composable(Routes.HISTORIQUE) {
+                    HistoriqueScreen(
+                        onOpenOrder = { id -> navController.navigate(Routes.orderDetail(id)) },
+                    )
+                }
+                composable(
+                    route = Routes.ORDER_DETAIL,
+                    arguments = listOf(navArgument("orderId") { type = NavType.LongType }),
+                ) { entry ->
+                    val orderId = entry.arguments?.getLong("orderId") ?: return@composable
+                    OrderDetailScreen(
+                        orderId = orderId,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable(Routes.DASHBOARD) { DashboardScreen() }
                 composable(Routes.PRODUITS) { ProduitsScreen() }
+                composable(Routes.CATEGORIES) { CategoriesScreen() }
                 composable(Routes.TABLES) { TablesScreen() }
-                composable(Routes.COMMANDES) { CommandesScreen() }
-                composable(Routes.AVOIRS) { AvoirsScreen() }
-                composable(Routes.DETTES) { DettesScreen() }
                 composable(Routes.STOCK) { StockScreen() }
-                composable(Routes.CAISSE_SESSION) { CaisseSessionScreen() }
                 composable(Routes.RAPPORTS) { RapportsScreen() }
+                composable(Routes.UTILISATEURS) { UsersScreen() }
                 composable(Routes.PARAMETRES) { ParametresScreen() }
             }
         }

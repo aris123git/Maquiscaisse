@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,7 +28,7 @@ import com.maquis.caisse.domain.model.CartLine
 import com.maquis.caisse.ui.theme.GestionSuccess
 
 /**
- * Panier caisse (panneau droit en paysage), comme Gestion_app.
+ * Panier caisse compact (~1/3 plus petit) pour laisser plus de place au catalogue.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -38,12 +39,13 @@ fun CartPanel(
     onValidate: () -> Unit,
     modifier: Modifier = Modifier,
     onClear: (() -> Unit)? = null,
+    onSaveOrder: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(16.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -52,10 +54,13 @@ fun CartPanel(
         ) {
             Text(
                 text = if (lines.isEmpty()) "Panier" else "Panier (${lines.sumOf { it.quantity }})",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.titleLarge,
             )
             if (onClear != null && lines.isNotEmpty()) {
-                TextButton(onClick = onClear) {
+                TextButton(
+                    onClick = onClear,
+                    modifier = Modifier.heightIn(min = 40.dp),
+                ) {
                     Text("Vider", color = MaterialTheme.colorScheme.error)
                 }
             }
@@ -63,10 +68,10 @@ fun CartPanel(
 
         if (lines.isEmpty()) {
             Text(
-                text = "Tape un produit à gauche pour l'ajouter",
-                style = MaterialTheme.typography.bodyLarge,
+                text = "Ajouter un produit",
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 12.dp),
+                modifier = Modifier.padding(top = 6.dp),
             )
             Spacer(modifier = Modifier.weight(1f))
         } else {
@@ -74,7 +79,7 @@ fun CartPanel(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
+                    .padding(top = 4.dp),
             ) {
                 items(lines, key = { it.productId }) { line ->
                     Row(
@@ -84,43 +89,51 @@ fun CartPanel(
                                 onClick = { onLineLongPress(line) },
                                 onLongClick = { onLineLongPress(line) },
                             )
-                            .padding(vertical = 8.dp),
+                            .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(line.productName, style = MaterialTheme.typography.bodyLarge)
+                            Text(line.productName, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
                             Text(
                                 "${line.quantity} × ${MoneyFormat.format(line.unitPrice)}",
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Text(
                             text = MoneyFormat.format(line.lineTotal),
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
             }
-            Text(
-                text = "Tape une ligne pour modifier",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+        HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
 
         Text(
             text = MoneyFormat.format(total),
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
+                .padding(bottom = 6.dp),
         )
+
+        if (onSaveOrder != null) {
+            OutlinedButton(
+                onClick = onSaveOrder,
+                enabled = lines.isNotEmpty(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .padding(bottom = 4.dp),
+            ) {
+                Text("Enregistrer commande", style = MaterialTheme.typography.titleMedium)
+            }
+        }
 
         Button(
             onClick = onValidate,
@@ -128,9 +141,9 @@ fun CartPanel(
             colors = ButtonDefaults.buttonColors(containerColor = GestionSuccess),
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp),
+                .heightIn(min = 48.dp),
         ) {
-            Text("Encaisser", style = MaterialTheme.typography.titleLarge)
+            Text("Encaisser", style = MaterialTheme.typography.titleMedium)
         }
     }
 }

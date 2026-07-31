@@ -4,15 +4,23 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.maquis.caisse.common.CartJson
+import com.maquis.caisse.core.SettingsKeys
+import com.maquis.caisse.data.print.EscPosPrinter
 import com.maquis.caisse.domain.cart.CartOperations
+import com.maquis.caisse.domain.model.AppUser
 import com.maquis.caisse.domain.model.CartLine
-import com.maquis.caisse.domain.model.CompleteSaleRequest
+import com.maquis.caisse.domain.model.CreateOrderRequest
+import com.maquis.caisse.domain.model.DiningTable
+import com.maquis.caisse.domain.model.Order
 import com.maquis.caisse.domain.model.PaymentInput
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.domain.model.Product
 import com.maquis.caisse.domain.model.Sale
 import com.maquis.caisse.domain.payment.PaymentCalculator
-import com.maquis.caisse.domain.usecase.CompleteSaleUseCase
+import com.maquis.caisse.domain.repository.OrderRepository
+import com.maquis.caisse.domain.repository.SettingsRepository
+import com.maquis.caisse.domain.repository.TableRepository
+import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.domain.usecase.ObserveActiveProductsUseCase
 import com.maquis.caisse.domain.usecase.ResolveProductImageUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -90,7 +98,13 @@ data class CaisseUiState(
     val showPayment: Boolean = false,
     val payment: PaymentFormState = PaymentFormState(),
     val completedSale: Sale? = null,
+    val completedOrder: Order? = null,
     val snackbarMessage: String? = null,
+    val waitresses: List<AppUser> = emptyList(),
+    val tables: List<DiningTable> = emptyList(),
+    val selectedWaitress: AppUser? = null,
+    val selectedTable: DiningTable? = null,
+    val tablesEnabled: Boolean = true,
 ) {
     val cartTotal: Long get() = CartOperations.total(cart)
 
@@ -109,8 +123,12 @@ data class CaisseUiState(
 class CaisseViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     observeActiveProducts: ObserveActiveProductsUseCase,
-    private val completeSale: CompleteSaleUseCase,
     private val resolveImage: ResolveProductImageUseCase,
+    private val orderRepository: OrderRepository,
+    private val userRepository: UserRepository,
+    private val tableRepository: TableRepository,
+    private val settingsRepository: SettingsRepository,
+    private val printer: EscPosPrinter,
 ) : ViewModel() {
 
     private val saleInFlight = AtomicBoolean(false)
@@ -129,12 +147,41 @@ class CaisseViewModel @Inject constructor(
                 _uiState.update { it.copy(products = products) }
             }
         }
+        viewModelScope.launch {
+            userRepository.observeWaitresses().collect { list ->
+                _uiState.update { state ->
+                    state.copy(
+                        waitresses = list,
+                        selectedWaitress = state.selectedWaitress
+                            ?: list.firstOrNull(),
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            tableRepository.observeActive().collect { list ->
+                _uiState.update { it.copy(tables = list) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.observe(SettingsKeys.TABLES_ENABLED).collect { value ->
+                _uiState.update { it.copy(tablesEnabled = value != "false") }
+            }
+        }
     }
 
     fun imageFile(relativePath: String?): File? = resolveImage(relativePath)
 
     fun onSearchQueryChange(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun selectWaitress(user: AppUser?) {
+        _uiState.update { it.copy(selectedWaitress = user) }
+    }
+
+    fun selectTable(table: DiningTable?) {
+        _uiState.update { it.copy(selectedTable = table) }
     }
 
     fun onProductTap(product: Product) {
@@ -214,6 +261,48 @@ class CaisseViewModel @Inject constructor(
     private fun setCart(cart: List<CartLine>) {
         savedStateHandle[KEY_CART] = CartJson.encode(cart)
         _uiState.update { it.copy(cart = cart) }
+    }
+
+    /** Enregistre une commande maquis sans paiement obligatoire. */
+    fun saveUnpaidOrder(onCreated: (Long) -> Unit = {}) {
+        val state = _uiState.value
+        if (state.cart.isEmpty()) {
+            _uiState.update { it.copy(snackbarMessage = "Panier vide") }
+            return
+        }
+        if (!saleInFlight.compareAndSet(false, true)) return
+        viewModelScope.launch {
+            try {
+                val order = orderRepository.createOrder(
+                    CreateOrderRequest(
+                        lines = state.cart,
+                        waitressId = state.selectedWaitress?.id,
+                        waitressName = state.selectedWaitress?.name,
+                        tableId = if (state.tablesEnabled) state.selectedTable?.id else null,
+                        tableLabel = if (state.tablesEnabled) state.selectedTable?.label else null,
+                        markAsPaid = false,
+                    ),
+                )
+                savedStateHandle[KEY_CART] = CartJson.encode(emptyList())
+                _uiState.update {
+                    it.copy(
+                        cart = emptyList(),
+                        completedOrder = order,
+                        snackbarMessage = "Commande ${order.publicId} enregistrée",
+                    )
+                }
+                if (printer.isEnabled()) {
+                    printer.printOrder(order)
+                }
+                onCreated(order.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update { it.copy(snackbarMessage = e.message ?: "Échec commande") }
+            } finally {
+                saleInFlight.set(false)
+            }
+        }
     }
 
     fun openPayment() {
@@ -326,19 +415,34 @@ class CaisseViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                val request = CompleteSaleRequest(
-                    lines = state.cart,
-                    payment = state.payment.toPaymentInput(),
+                val paymentInput = state.payment.toPaymentInput()
+                val breakdown = PaymentCalculator.validate(state.cartTotal, paymentInput).getOrThrow()
+                val order = orderRepository.createOrder(
+                    CreateOrderRequest(
+                        lines = state.cart,
+                        waitressId = state.selectedWaitress?.id,
+                        waitressName = state.selectedWaitress?.name,
+                        tableId = if (state.tablesEnabled) state.selectedTable?.id else null,
+                        tableLabel = if (state.tablesEnabled) state.selectedTable?.label else null,
+                        markAsPaid = true,
+                        paymentMode = breakdown.mode,
+                        amountTendered = breakdown.amountTendered,
+                        paymentAmount = breakdown.totalAmount,
+                    ),
                 )
-                val sale = completeSale(request)
                 savedStateHandle[KEY_CART] = CartJson.encode(emptyList())
+                if (printer.isEnabled()) {
+                    printer.printOrder(order)
+                }
                 _uiState.update {
                     it.copy(
                         cart = emptyList(),
                         showPayment = false,
                         payment = PaymentFormState(),
-                        completedSale = sale,
+                        completedOrder = order,
+                        completedSale = null,
                         quantityOverlay = null,
+                        snackbarMessage = "Commande ${order.publicId} payée",
                     )
                 }
             } catch (e: CancellationException) {
@@ -359,7 +463,7 @@ class CaisseViewModel @Inject constructor(
     }
 
     fun dismissTicket() {
-        _uiState.update { it.copy(completedSale = null) }
+        _uiState.update { it.copy(completedSale = null, completedOrder = null) }
     }
 
     fun clearCart() {

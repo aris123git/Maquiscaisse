@@ -11,7 +11,11 @@ object Constants {
     const val MAX_MONEY_DIGITS = 9
     const val MAX_STOCK_DIGITS = 7
 
-    /** Grille produits en paysage (comme catalogue Gestion_app). */
-    const val PRODUCT_GRID_COLUMNS = 3
-    const val CAISSE_GRID_COLUMNS = 3
+    /**
+     * Grille produits en paysage : 4–5 par ligne.
+     * Largeur mini d'une tuile (dp) pour [GridCells.Adaptive].
+     */
+    const val PRODUCT_TILE_MIN_DP = 118
+    const val PRODUCT_GRID_COLUMNS = 5
+    const val CAISSE_GRID_COLUMNS = 5
 }

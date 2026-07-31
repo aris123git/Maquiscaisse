@@ -106,7 +106,7 @@ fun ProduitsScreen(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(Constants.PRODUCT_GRID_COLUMNS),
+                columns = GridCells.Adaptive(minSize = Constants.PRODUCT_TILE_MIN_DP.dp),
                 contentPadding = PaddingValues(8.dp),
                 modifier = Modifier
                     .fillMaxSize()

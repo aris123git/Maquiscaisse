@@ -123,7 +123,7 @@ fun CaisseScreen(
                     }
                 } else {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(Constants.CAISSE_GRID_COLUMNS),
+                        columns = GridCells.Adaptive(minSize = Constants.PRODUCT_TILE_MIN_DP.dp),
                         contentPadding = PaddingValues(2.dp),
                         modifier = Modifier
                             .weight(1f)

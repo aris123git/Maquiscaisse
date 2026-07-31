@@ -13,15 +13,34 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0-sprint0"
+        versionCode = 11
+        versionName = "0.7.1-order-pay-flow"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Keystore stable (repo) : les APK CI successifs s'installent en mise à jour
+    // sans « conflit de signature » ni désinstallation obligatoire.
+    signingConfigs {
+        create("ciDebug") {
+            storeFile = file("keystore/ci-debug.jks")
+            storePassword = "android"
+            keyAlias = "maquiscaisse"
+            keyPassword = "android"
+        }
+    }
+
+    // Schémas Room exportés pour tests de migration (exportSchema = true).
+    // Room/KSP lit cet argument à la compilation.
+    // Les fichiers générés vont dans app/schemas/.
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("ciDebug")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("ciDebug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -50,7 +69,12 @@ android {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
+    implementation("androidx.core:core-ktx:1.13.1")
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -63,6 +87,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended") // ex: Icons.Filled.Inventory2
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 

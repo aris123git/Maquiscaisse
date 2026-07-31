@@ -1,10 +1,10 @@
 name: Compiler l'APK debug
 
-# Se déclenche automatiquement à chaque push sur la branche main,
-# ou manuellement depuis l'onglet "Actions" de GitHub.
+# APK téléchargeable avant merge : PR, push branches cursor/*, ou manuel.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'cursor/**' ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -23,8 +23,8 @@ jobs:
       - name: Rendre gradlew exécutable
         run: chmod +x ./gradlew
 
-      - name: Compiler l'APK debug
-        run: ./gradlew assembleDebug
+      - name: Tests unitaires + APK debug
+        run: ./gradlew testDebugUnitTest assembleDebug
 
       - name: Publier l'APK comme fichier téléchargeable
         uses: actions/upload-artifact@v4

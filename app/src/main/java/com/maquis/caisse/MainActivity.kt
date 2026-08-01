@@ -1,5 +1,6 @@
 package com.maquis.caisse
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -17,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.core.activation.ActivationService
 import com.maquis.caisse.data.local.DatabaseSeed
+import com.maquis.caisse.kiosk.BootCompletedReceiver
 import com.maquis.caisse.kiosk.KioskManager
 import com.maquis.caisse.navigation.MaquisNavGraph
 import com.maquis.caisse.ui.activation.ActivationScreen
@@ -35,6 +37,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleBootIntent(intent)
         enableEdgeToEdge()
         setContent {
             var ready by remember { mutableStateOf(false) }
@@ -76,15 +79,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleBootIntent(intent)
+        tryEnterKiosk()
+    }
+
     override fun onResume() {
         super.onResume()
-        if (::kioskManager.isInitialized &&
-            ::activationService.isInitialized &&
-            activationService.isActivated() &&
-            kioskManager.shouldLockNow()
-        ) {
-            kioskManager.enterKiosk(this)
-        }
+        tryEnterKiosk()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -96,6 +100,25 @@ class MainActivity : ComponentActivity() {
             kioskManager.shouldLockNow()
         ) {
             kioskManager.hideSystemUi(this)
+        }
+    }
+
+    private fun handleBootIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(BootCompletedReceiver.EXTRA_FROM_BOOT, false) != true) return
+        if (!::kioskManager.isInitialized) return
+        // Au boot : l'option kiosque reste valable → on force le re-verrouillage.
+        if (kioskManager.isEnabled()) {
+            kioskManager.onBootCompleted()
+        }
+    }
+
+    private fun tryEnterKiosk() {
+        if (::kioskManager.isInitialized &&
+            ::activationService.isInitialized &&
+            activationService.isActivated() &&
+            kioskManager.shouldLockNow()
+        ) {
+            kioskManager.enterKiosk(this)
         }
     }
 }

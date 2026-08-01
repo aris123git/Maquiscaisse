@@ -5,12 +5,15 @@ import android.app.ActivityManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.view.View
 import android.view.WindowManager
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.maquis.caisse.MainActivity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -116,8 +119,13 @@ class KioskManager @Inject constructor(
     fun setEnabled(enabled: Boolean) {
         store.enabled = enabled
         if (enabled) {
+            // Kiosque activé ⇒ démarrage auto aussi (option persistante après reboot).
+            store.autoStart = true
             store.temporarilyUnlocked = false
             prepareDeviceOwnerPolicies()
+            setAsPreferredHomeIfDeviceOwner()
+        } else {
+            clearPreferredHomeIfDeviceOwner()
         }
     }
 
@@ -149,6 +157,31 @@ class KioskManager @Inject constructor(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 dpm.setKeyguardDisabled(adminComponent, true)
             }
+            setAsPreferredHomeIfDeviceOwner()
+        } catch (_: Exception) {
+            // ignore
+        }
+    }
+
+    /** Device Owner : NexaGes devient l'écran d'accueil → ouverture garantie au boot. */
+    private fun setAsPreferredHomeIfDeviceOwner() {
+        if (!isDeviceOwner()) return
+        try {
+            val filter = IntentFilter(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addCategory(Intent.CATEGORY_DEFAULT)
+            }
+            val activity = ComponentName(appContext, MainActivity::class.java)
+            dpm.addPersistentPreferredActivity(adminComponent, filter, activity)
+        } catch (_: Exception) {
+            // ignore
+        }
+    }
+
+    private fun clearPreferredHomeIfDeviceOwner() {
+        if (!isDeviceOwner()) return
+        try {
+            dpm.clearPackagePersistentPreferredActivities(adminComponent, appContext.packageName)
         } catch (_: Exception) {
             // ignore
         }
@@ -178,8 +211,9 @@ class KioskManager @Inject constructor(
     }
 
     fun deviceOwnerSetupHint(): String =
-        "Pour un verrouillage total (accueil / applications récentes bloqués), " +
+        "Pour un verrouillage total et un démarrage auto garanti, " +
             "provisionner Device Owner une fois via ADB :\n" +
             "adb shell dpm set-device-owner " +
-            "${appContext.packageName}/.kiosk.NexaDeviceAdminReceiver"
+            "${appContext.packageName}/.kiosk.NexaDeviceAdminReceiver\n" +
+            "Sinon : Réglages Android → Applications par défaut → Application d'accueil → NexaGes."
 }

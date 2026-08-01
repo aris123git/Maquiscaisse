@@ -36,14 +36,15 @@ class KioskSecureStore @Inject constructor(
     var enabled: Boolean
         get() = prefs.getBoolean(KEY_ENABLED, false)
         set(value) {
-            prefs.edit().putBoolean(KEY_ENABLED, value).apply()
+            // commit() : persistance immédiate (survit au reboot / kill process).
+            prefs.edit().putBoolean(KEY_ENABLED, value).commit()
             publish()
         }
 
     var autoStart: Boolean
         get() = prefs.getBoolean(KEY_AUTO_START, false)
         set(value) {
-            prefs.edit().putBoolean(KEY_AUTO_START, value).apply()
+            prefs.edit().putBoolean(KEY_AUTO_START, value).commit()
             publish()
         }
 

@@ -155,9 +155,14 @@ class ParametresViewModel @Inject constructor(
             }
         }
         if (enabled) {
-            kioskManager.setEnabled(true)
+            kioskManager.setEnabled(true) // persiste + active aussi le démarrage auto
             kioskManager.enterKiosk(activity)
-            _ui.update { it.copy(message = "Mode kiosque activé (Lock Task)") }
+            _ui.update {
+                it.copy(
+                    message = "Mode kiosque activé — reste valable après redémarrage " +
+                        "(démarrage auto inclus)",
+                )
+            }
         } else {
             kioskManager.disableKiosk(activity)
             _ui.update { it.copy(message = "Mode kiosque désactivé") }
@@ -539,8 +544,8 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             GlassCard {
             Text("MODE KIOSQUE", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Verrouille la tablette sur NexaGes (Lock Task Mode Android). " +
-                    "Sortie réservée au compte Admin : saisis le PIN Admin (ou le PIN kiosque).",
+                "Verrouille la tablette sur NexaGes. Les options restent valables après " +
+                    "redémarrage. Sortie : compte Admin + PIN Admin.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -552,7 +557,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                         kioskPinAction = KioskPinAction.TOGGLE_ENABLED
                     },
                 )
-                Text("Activer le mode kiosque")
+                Text("Activer le mode kiosque (persistant)")
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
@@ -562,8 +567,14 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                         kioskPinAction = KioskPinAction.TOGGLE_AUTO_START
                     },
                 )
-                Text("Lancer automatiquement NexaGes au démarrage")
+                Text("Démarrer automatiquement après allumage")
             }
+            Text(
+                "Astuce : définis aussi NexaGes comme application d'accueil (Home) " +
+                    "dans les réglages Android pour un lancement garanti au boot.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 "PIN administrateur : ${if (ui.kioskHasPin) "••••" else "non défini"}",
                 style = MaterialTheme.typography.bodyLarge,

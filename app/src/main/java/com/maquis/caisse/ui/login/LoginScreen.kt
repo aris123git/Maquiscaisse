@@ -7,15 +7,21 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -23,6 +29,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,8 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -41,7 +50,6 @@ import androidx.lifecycle.viewModelScope
 import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.domain.model.AppUser
 import com.maquis.caisse.domain.repository.UserRepository
-import com.maquis.caisse.ui.common.DropdownField
 import com.maquis.caisse.ui.theme.GestionBlue
 import com.maquis.caisse.ui.theme.GestionCyan
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -59,10 +67,14 @@ class LoginViewModel @Inject constructor(
     private val session: SessionManager,
 ) : ViewModel() {
     val users: StateFlow<List<AppUser>> = userRepository.observeActive()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+
+    fun clearError() {
+        _error.value = null
+    }
 
     fun login(name: String, pin: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
@@ -82,6 +94,7 @@ class LoginViewModel @Inject constructor(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LoginScreen(
     onLoggedIn: () -> Unit,
@@ -89,8 +102,20 @@ fun LoginScreen(
 ) {
     val users by viewModel.users.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
-    var selectedName by remember { mutableStateOf<String?>(null) }
+    var selectedId by remember { mutableStateOf<Long?>(null) }
     var pin by remember { mutableStateOf("") }
+
+    LaunchedEffect(users) {
+        if (users.isEmpty()) {
+            selectedId = null
+            return@LaunchedEffect
+        }
+        if (selectedId == null || users.none { it.id == selectedId }) {
+            selectedId = users.firstOrNull()?.id
+        }
+    }
+
+    val selectedUser = users.firstOrNull { it.id == selectedId }
 
     val pulse = rememberInfiniteTransition(label = "loginPulse")
     val glow by pulse.animateFloat(
@@ -121,7 +146,8 @@ fun LoginScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -130,25 +156,50 @@ fun LoginScreen(
                 color = Color.White.copy(alpha = 0.92f),
                 tonalElevation = 2.dp,
                 shadowElevation = 8.dp,
-                modifier = Modifier.widthIn(max = 440.dp).fillMaxWidth(),
+                modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
             ) {
                 Column(
                     modifier = Modifier.padding(28.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Text("Maquis Caisse", style = MaterialTheme.typography.headlineMedium, color = GestionBlue)
+                    Text("NexaPOS", style = MaterialTheme.typography.headlineMedium, color = GestionBlue)
                     Text(
-                        "Connecte-toi avec ton compte.",
+                        "Touche ton compte, puis saisis ton code PIN.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    DropdownField(
-                        label = "Compte",
-                        selected = selectedName ?: users.firstOrNull()?.name,
-                        options = users.map { it.name },
-                        optionLabel = { it },
-                        onSelect = { selectedName = it },
-                        allowNull = false,
-                    )
+
+                    if (users.isEmpty()) {
+                        Text(
+                            "Aucun compte actif. Demande à l'administrateur d'en créer.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    } else {
+                        Text(
+                            "Compte",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            users.forEach { user ->
+                                val selected = user.id == selectedId
+                                UserChip(
+                                    name = user.name,
+                                    role = user.role,
+                                    selected = selected,
+                                    onClick = {
+                                        selectedId = user.id
+                                        pin = ""
+                                        viewModel.clearError()
+                                    },
+                                )
+                            }
+                        }
+                    }
+
                     OutlinedTextField(
                         value = pin,
                         onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6) },
@@ -160,18 +211,54 @@ fun LoginScreen(
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(
                         onClick = {
-                            val name = selectedName ?: users.firstOrNull()?.name.orEmpty()
+                            val name = selectedUser?.name.orEmpty()
                             viewModel.login(name, pin, onLoggedIn)
                         },
-                        enabled = (selectedName ?: users.firstOrNull()?.name) != null && pin.length >= 4,
+                        enabled = selectedUser != null && pin.length >= 4,
                         colors = ButtonDefaults.buttonColors(containerColor = GestionBlue),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
                     ) {
-                        Text("Entrer")
+                        Text(
+                            if (selectedUser != null) {
+                                "Entrer — ${selectedUser.name}"
+                            } else {
+                                "Entrer"
+                            },
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun UserChip(
+    name: String,
+    role: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(16.dp)
+    val bg = if (selected) GestionBlue else Color.White
+    val fg = if (selected) Color.White else GestionBlue
+    val border = if (selected) GestionBlue else GestionBlue.copy(alpha = 0.35f)
+    Column(
+        modifier = Modifier
+            .clip(shape)
+            .background(bg)
+            .border(1.5.dp, border, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .widthIn(min = 110.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(name, color = fg, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        Text(
+            role.lowercase().replaceFirstChar { it.titlecase() },
+            color = if (selected) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelLarge,
+        )
     }
 }

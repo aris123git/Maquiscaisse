@@ -13,10 +13,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,7 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -38,7 +36,10 @@ import com.maquis.caisse.domain.model.AppUser
 import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.ui.common.DropdownField
-import com.maquis.caisse.ui.theme.GestionBlue
+import com.maquis.caisse.ui.common.GlassCard
+import com.maquis.caisse.ui.common.PageHeader
+import com.maquis.caisse.ui.common.PillTone
+import com.maquis.caisse.ui.common.TextPill
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -157,92 +158,91 @@ fun UsersScreen(viewModel: UsersViewModel = hiltViewModel()) {
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Utilisateurs", style = MaterialTheme.typography.headlineMedium, color = GestionBlue)
-        Text(
-            "Admin : ${current?.name ?: "—"} — gestion des comptes uniquement. " +
-                "Pour changer de session : se déconnecter, puis saisir le code du compte.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        PageHeader(
+            title = "Utilisateurs",
+            subtitle = "Admin : ${current?.name ?: "—"} — déconnecte-toi pour changer de session",
         )
+        TextPill("${users.size} comptes actifs", PillTone.INFO)
 
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = Color.White.copy(alpha = 0.9f),
-            tonalElevation = 1.dp,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text("Créer un compte", style = MaterialTheme.typography.titleMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Nom") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = pin,
-                        onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6) },
-                        label = { Text("PIN initial") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.weight(0.7f),
-                        singleLine = true,
-                    )
-                }
-                DropdownField(
-                    label = "Rôle",
-                    selected = role,
-                    options = UserRoleOption.entries,
-                    optionLabel = { it.label },
-                    onSelect = { if (it != null) role = it },
+        GlassCard {
+            Text("Créer un compte", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nom") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
                 )
-                Button(
-                    onClick = {
-                        viewModel.add(name, pin, role)
-                        name = ""
-                        pin = ""
-                    },
-                    enabled = name.isNotBlank() && pin.length >= 4,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                ) { Text("Créer le compte") }
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6) },
+                    label = { Text("PIN initial") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.weight(0.7f),
+                    singleLine = true,
+                )
             }
+            DropdownField(
+                label = "Rôle",
+                selected = role,
+                options = UserRoleOption.entries,
+                optionLabel = { it.label },
+                onSelect = { if (it != null) role = it },
+            )
+            Button(
+                onClick = {
+                    viewModel.add(name, pin, role)
+                    name = ""
+                    pin = ""
+                },
+                enabled = name.isNotBlank() && pin.length >= 4,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+            ) { Text("Créer le compte") }
         }
 
-        message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        message?.let { TextPill(it, PillTone.SUCCESS) }
 
-        HorizontalDivider()
-        LazyColumn(modifier = Modifier.weight(1f)) {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             items(users, key = { it.id }) { user ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "${user.name} · ${user.role}" +
-                                if (user.isWaitress) " · serveuse" else "",
-                        )
-                        if (user.id == current?.id) {
-                            Text("Connecté", color = GestionBlue, style = MaterialTheme.typography.labelLarge)
+                GlassCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(user.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextPill(
+                                    user.role.lowercase().replaceFirstChar { it.titlecase() },
+                                    when (user.role) {
+                                        "ADMIN" -> PillTone.DANGER
+                                        "CAISSIER" -> PillTone.INFO
+                                        else -> PillTone.CYAN
+                                    },
+                                )
+                                if (user.isWaitress) TextPill("Serveuse", PillTone.WARNING)
+                                if (user.id == current?.id) TextPill("Connecté", PillTone.SUCCESS)
+                            }
                         }
-                    }
-                    TextButton(onClick = { pinTarget = user }) { Text("Code") }
-                    if (user.id != current?.id) {
-                        TextButton(onClick = { toDelete = user }) {
-                            Text("Suppr.", color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = { pinTarget = user }) { Text("Code") }
+                        if (user.id != current?.id) {
+                            TextButton(onClick = { toDelete = user }) {
+                                Text("Suppr.", color = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
                 }
-                HorizontalDivider()
             }
         }
     }

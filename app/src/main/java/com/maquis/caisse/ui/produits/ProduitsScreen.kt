@@ -19,18 +19,21 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.core.Constants
+import com.maquis.caisse.ui.theme.GestionBlue
 
 /**
  * Catalogue produits (Sprint 1) : grille Coil + création/édition avec image.
@@ -79,12 +82,16 @@ fun ProduitsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Produits") })
+            TopAppBar(
+                title = { Text("Produits", color = GestionBlue) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            )
         },
+        containerColor = Color.Transparent,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = viewModel::openCreateForm,
-                containerColor = MaterialTheme.colorScheme.primary,
+                containerColor = GestionBlue,
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Ajouter un produit")
             }

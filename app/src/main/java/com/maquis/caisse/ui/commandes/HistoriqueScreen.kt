@@ -26,6 +26,9 @@ import com.maquis.caisse.domain.model.AppUser
 import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.ui.common.DropdownField
+import com.maquis.caisse.ui.common.PageHeader
+import com.maquis.caisse.ui.common.PillTone
+import com.maquis.caisse.ui.common.TextPill
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -104,7 +107,11 @@ private fun HistoryListPane(
     onOpenOrder: (Long) -> Unit,
 ) {
     Column(modifier = modifier) {
-        Text("HISTORIQUE DES COMMANDES", style = MaterialTheme.typography.headlineMedium)
+        PageHeader(
+            title = "Historique",
+            subtitle = "Toutes les commandes filtrables",
+        )
+        TextPill("${displayed.size} résultats", PillTone.INFO)
         OutlinedTextField(
             value = ui.query,
             onValueChange = viewModel::onQuery,

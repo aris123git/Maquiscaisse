@@ -33,6 +33,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.core.Constants
 import com.maquis.caisse.ui.common.DropdownField
+import com.maquis.caisse.ui.common.PageHeader
+import com.maquis.caisse.ui.common.PillTone
+import com.maquis.caisse.ui.common.TextPill
 import com.maquis.caisse.ui.components.NumericKeypad
 import com.maquis.caisse.ui.produits.ProductTile
 
@@ -62,11 +65,18 @@ fun CaisseScreen(
                     .fillMaxHeight()
                     .padding(10.dp),
             ) {
-                Text(
-                    text = "Caisse",
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.padding(bottom = 6.dp),
+                PageHeader(
+                    title = "Caisse",
+                    subtitle = "Touche un produit pour l'ajouter au panier",
+                    modifier = Modifier.padding(bottom = 4.dp),
                 )
+                if (state.cart.isNotEmpty()) {
+                    TextPill(
+                        "${state.cart.sumOf { it.quantity }} dans le panier · ${MoneyFormat.format(state.cartTotal)}",
+                        PillTone.INFO,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -140,26 +150,21 @@ fun CaisseScreen(
                 }
             }
 
-            // Panier (droite) — réduit ~1/3
-            Surface(
-                tonalElevation = 2.dp,
+            // Panier (droite) — style verre
+            CartPanel(
+                lines = state.cart,
+                total = state.cartTotal,
+                onLineLongPress = viewModel::onCartLineLongPress,
+                onValidate = viewModel::openPayment,
+                onClear = viewModel::clearCart,
+                onSaveOrder = {
+                    viewModel.saveUnpaidOrder(onCreated = onOrderCreated)
+                },
                 modifier = Modifier
                     .weight(0.72f)
                     .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.surface),
-            ) {
-                CartPanel(
-                    lines = state.cart,
-                    total = state.cartTotal,
-                    onLineLongPress = viewModel::onCartLineLongPress,
-                    onValidate = viewModel::openPayment,
-                    onClear = viewModel::clearCart,
-                    onSaveOrder = {
-                        viewModel.saveUnpaidOrder(onCreated = onOrderCreated)
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+                    .padding(vertical = 8.dp, horizontal = 4.dp),
+            )
         }
 
         SnackbarHost(
@@ -188,6 +193,7 @@ fun CaisseScreen(
                     maxDigits = Constants.MAX_QUANTITY_DIGITS,
                     confirmLabel = "OK",
                     confirmEnabled = overlay.quantityInput.isNotEmpty(),
+                    inputSessionKey = "${overlay.productId}-${overlay.isEditing}",
                     onDeleteLine = if (overlay.isEditing) {
                         { viewModel.deleteOverlayLine() }
                     } else {

@@ -51,6 +51,10 @@ import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.kiosk.KioskManager
 import com.maquis.caisse.kiosk.KioskSecureStore
 import com.maquis.caisse.ui.common.DropdownField
+import com.maquis.caisse.ui.common.GlassCard
+import com.maquis.caisse.ui.common.PageHeader
+import com.maquis.caisse.ui.common.PillTone
+import com.maquis.caisse.ui.common.TextPill
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -423,7 +427,10 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Paramètres", style = MaterialTheme.typography.headlineMedium)
+        PageHeader(title = "Paramètres", subtitle = "Commerce, impression, kiosque")
+        TextPill("Style Assistant · pastilles & cartes verre", PillTone.CYAN)
+
+        GlassCard {
         OutlinedButton(
             onClick = { changeOwnPin = true },
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
@@ -440,8 +447,10 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             )
             Text("Activer la gestion des tables")
         }
+        }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        TextPill("Sauvegarde", PillTone.INFO)
+        GlassCard {
         Text("Sauvegarde des données", style = MaterialTheme.typography.titleLarge)
         Text(
             "Avant une désinstallation (conflit d'APK), exporte une sauvegarde. " +
@@ -459,8 +468,10 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             enabled = !ui.backupBusy,
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
         ) { Text("Restaurer une sauvegarde") }
+        }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        TextPill("Impression", PillTone.CYAN)
+        GlassCard {
         Text("Impression", style = MaterialTheme.typography.titleLarge)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(
@@ -508,9 +519,11 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        }
 
         if (ui.isAdmin) {
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            TextPill("Mode kiosque", PillTone.WARNING)
+            GlassCard {
             Text("MODE KIOSQUE", style = MaterialTheme.typography.titleLarge)
             Text(
                 "Verrouille la tablette sur NexaPOS (Lock Task Mode Android). " +
@@ -565,13 +578,14 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            }
         }
 
         Button(
             onClick = { viewModel.save() },
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(top = 8.dp),
         ) { Text("Enregistrer") }
-        ui.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        ui.message?.let { TextPill(it, PillTone.SUCCESS) }
     }
 
     if (changeOwnPin) {

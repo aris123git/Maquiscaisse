@@ -9,26 +9,30 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.domain.model.Product
+import com.maquis.caisse.ui.common.PillTone
+import com.maquis.caisse.ui.common.TextPill
+import com.maquis.caisse.ui.theme.GestionBlue
 import java.io.File
 
-/**
- * Tuile produit pour la grille catalogue : photo (Coil) + nom + prix.
- * Fallback icône générique si pas d'image.
- */
 @Composable
 fun ProductTile(
     product: Product,
@@ -36,69 +40,72 @@ fun ProductTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White.copy(alpha = 0.9f),
+        tonalElevation = 1.dp,
+        shadowElevation = 2.dp,
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(8.dp),
+            .padding(4.dp)
+            .clickable(onClick = onClick),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (imageFile != null) {
-                AsyncImage(
-                    model = imageFile,
-                    contentDescription = product.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Filled.Image,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (!product.isActive) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "Inactif",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimary,
+        Column(modifier = Modifier.padding(8.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(GestionBlue.copy(alpha = 0.08f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (imageFile != null) {
+                    AsyncImage(
+                        model = imageFile,
+                        contentDescription = product.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = GestionBlue.copy(alpha = 0.45f),
                     )
                 }
+                if (!product.isActive) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.45f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        TextPill("Inactif", PillTone.NEUTRAL)
+                    }
+                }
             }
-        }
-        Text(
-            text = product.name,
-            style = MaterialTheme.typography.titleLarge,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-        Text(
-            text = MoneyFormat.format(product.salePrice),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        if (product.category.isNotBlank()) {
             Text(
-                text = product.category,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                text = product.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 8.dp),
             )
+            Text(
+                text = MoneyFormat.format(product.salePrice),
+                style = MaterialTheme.typography.bodyLarge,
+                color = GestionBlue,
+                fontWeight = FontWeight.Bold,
+            )
+            if (product.category.isNotBlank()) {
+                TextPill(
+                    text = product.category,
+                    tone = PillTone.CYAN,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
         }
     }
 }

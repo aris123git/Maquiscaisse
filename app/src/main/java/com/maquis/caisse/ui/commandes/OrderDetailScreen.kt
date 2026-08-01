@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -47,6 +48,10 @@ import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.domain.model.Order
 import com.maquis.caisse.domain.model.OrderLine
 import com.maquis.caisse.domain.model.PaymentMode
+import com.maquis.caisse.ui.common.GlassCard
+import com.maquis.caisse.ui.common.PillTone
+import com.maquis.caisse.ui.common.TextPill
+import com.maquis.caisse.ui.theme.GestionBlue
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -197,20 +202,31 @@ private fun OrderHeader(
     message: String?,
     error: String?,
 ) {
-    Text(
-        "${df.format(Date(order.createdAtEpochMs))} · ${order.status.label}",
-        style = MaterialTheme.typography.titleMedium,
-    )
-    Text("Table : ${order.tableLabel ?: "—"}  ·  Serveuse : ${order.waitressName ?: "—"}")
-    Text(
-        "Total ${MoneyFormat.format(order.totalAmount)} · " +
-            "Payé ${MoneyFormat.format(order.paidAmount)} · " +
-            "Reste ${MoneyFormat.format(order.remainingAmount)}",
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary,
-    )
-    message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    GlassCard {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                df.format(Date(order.createdAtEpochMs)),
+                style = MaterialTheme.typography.titleMedium,
+                color = GestionBlue,
+                fontWeight = FontWeight.Bold,
+            )
+            StatusPill(order.status)
+        }
+        Text("Table : ${order.tableLabel ?: "—"}  ·  Serveuse : ${order.waitressName ?: "—"}")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextPill("Total ${MoneyFormat.format(order.totalAmount)}", PillTone.CYAN)
+            TextPill("Payé ${MoneyFormat.format(order.paidAmount)}", PillTone.SUCCESS)
+            if (order.remainingAmount > 0L) {
+                TextPill("Reste ${MoneyFormat.format(order.remainingAmount)}", PillTone.WARNING)
+            }
+        }
+        message?.let { TextPill(it, PillTone.SUCCESS) }
+        error?.let { TextPill(it, PillTone.DANGER) }
+    }
 }
 
 @Composable

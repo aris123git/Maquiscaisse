@@ -1,6 +1,8 @@
 package com.maquis.caisse.ui.common
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -15,8 +17,53 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.maquis.caisse.ui.theme.GestionBlue
+import com.maquis.caisse.ui.theme.GestionCyan
+import com.maquis.caisse.ui.theme.GestionDanger
+import com.maquis.caisse.ui.theme.GestionSuccess
+import com.maquis.caisse.ui.theme.GestionWarning
+
+enum class PillTone {
+    INFO,
+    SUCCESS,
+    WARNING,
+    DANGER,
+    NEUTRAL,
+    CYAN,
+}
+
+/**
+ * Pastille texte style Assistant (ex. « Urgent · Stock »).
+ */
+@Composable
+fun TextPill(
+    text: String,
+    tone: PillTone = PillTone.INFO,
+    modifier: Modifier = Modifier,
+) {
+    val bg = when (tone) {
+        PillTone.INFO -> GestionBlue.copy(alpha = 0.12f)
+        PillTone.SUCCESS -> GestionSuccess.copy(alpha = 0.14f)
+        PillTone.WARNING -> GestionWarning.copy(alpha = 0.18f)
+        PillTone.DANGER -> GestionDanger.copy(alpha = 0.14f)
+        PillTone.NEUTRAL -> Color(0xFF64748B).copy(alpha = 0.12f)
+        PillTone.CYAN -> GestionCyan.copy(alpha = 0.16f)
+    }
+    Box(
+        modifier = modifier
+            .background(bg, RoundedCornerShape(999.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
 
 /**
  * Carte « verre » style Assistant — à réutiliser sur tous les écrans.

@@ -30,8 +30,14 @@ import com.maquis.caisse.domain.model.Product
 import com.maquis.caisse.domain.model.StockMovement
 import com.maquis.caisse.domain.repository.StockRepository
 import com.maquis.caisse.domain.usecase.ObserveProductsUseCase
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
 import com.maquis.caisse.ui.common.DropdownField
+import com.maquis.caisse.ui.common.GlassCard
 import com.maquis.caisse.ui.common.PageHeader
+import com.maquis.caisse.ui.common.PillTone
+import com.maquis.caisse.ui.common.TextPill
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -104,6 +110,8 @@ fun StockScreen(viewModel: StockViewModel = hiltViewModel()) {
     Row(modifier = Modifier.fillMaxSize().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             PageHeader(title = "Stock", subtitle = "Mouvements et alertes")
+            TextPill("${products.size} produits", PillTone.INFO)
+            GlassCard {
             DropdownField(
                 label = "Produit",
                 selected = selected,
@@ -111,9 +119,28 @@ fun StockScreen(viewModel: StockViewModel = hiltViewModel()) {
                 optionLabel = { "${it.name} (stock ${it.stock})" },
                 onSelect = { selected = it },
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf("ENTREE", "SORTIE", "CORRECTION", "INVENTAIRE").forEach { t ->
-                    FilterChip(selected = type == t, onClick = { type = t }, label = { Text(t) })
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    "ENTREE" to "Entrée",
+                    "SORTIE" to "Sortie",
+                    "CORRECTION" to "Correction",
+                    "INVENTAIRE" to "Inventaire",
+                ).forEach { (key, label) ->
+                    val selectedType = type == key
+                    TextPill(
+                        label,
+                        if (selectedType) {
+                            when (key) {
+                                "ENTREE" -> PillTone.SUCCESS
+                                "SORTIE" -> PillTone.WARNING
+                                "CORRECTION" -> PillTone.INFO
+                                else -> PillTone.CYAN
+                            }
+                        } else {
+                            PillTone.NEUTRAL
+                        },
+                        modifier = Modifier.clickable { type = key },
+                    )
                 }
             }
             if (type != "INVENTAIRE") {
@@ -148,41 +175,58 @@ fun StockScreen(viewModel: StockViewModel = hiltViewModel()) {
                         inventaireStock = if (type == "INVENTAIRE") inventaire.toIntOrNull() else null,
                     )
                 },
+                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) { Text("Enregistrer le mouvement") }
-            message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-            Text(
-                "Alertes : produits sous seuil affichés en rouge dans la liste.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            LazyColumn(modifier = Modifier.weight(1f)) {
-                items(products.filter { it.stock <= it.alertThreshold }, key = { it.id }) { p ->
-                    Text(
-                        "${p.name} : ${p.stock} (seuil ${p.alertThreshold})",
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(vertical = 4.dp),
-                    )
+            message?.let { TextPill(it, PillTone.SUCCESS) }
+            }
+
+            val alerts = products.filter { it.stock <= it.alertThreshold }
+            TextPill("${alerts.size} alertes stock", if (alerts.isEmpty()) PillTone.SUCCESS else PillTone.DANGER)
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items(alerts, key = { it.id }) { p ->
+                    GlassCard {
+                        Text(p.name, fontWeight = FontWeight.SemiBold)
+                        TextPill("Stock ${p.stock} · seuil ${p.alertThreshold}", PillTone.DANGER)
+                    }
                 }
             }
         }
 
-        Column(modifier = Modifier.weight(1.2f)) {
-            Text("Historique des mouvements", style = MaterialTheme.typography.titleLarge)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.weight(1.2f),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Historique des mouvements", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 items(movements, key = { it.id }) { m ->
-                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    GlassCard {
                         Text(df.format(Date(m.createdAtEpochMs)), style = MaterialTheme.typography.labelLarge)
-                        Text("${m.userName ?: "—"} · ${m.productName}")
-                        Text(
-                            "${m.type} ${if (m.type == "ENTREE") "+" else ""}${m.quantity} · " +
-                                "Stock ${m.previousStock} → ${m.newStock}",
+                        Text("${m.userName ?: "—"} · ${m.productName}", fontWeight = FontWeight.SemiBold)
+                        TextPill(
+                            "${m.type} ${if (m.type == "ENTREE") "+" else ""}${m.quantity} · ${m.previousStock} → ${m.newStock}",
+                            when (m.type) {
+                                "ENTREE" -> PillTone.SUCCESS
+                                "SORTIE" -> PillTone.WARNING
+                                else -> PillTone.INFO
+                            },
                         )
-                        if (m.motif.isNotBlank()) Text(m.motif, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (!m.supplier.isNullOrBlank()) Text("Fournisseur : ${m.supplier}")
-                        if (!m.comment.isNullOrBlank()) Text(m.comment!!)
+                        if (m.motif.isNotBlank()) {
+                            Text(m.motif, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (!m.supplier.isNullOrBlank()) {
+                            Text("Fournisseur : ${m.supplier}")
+                        }
+                        if (!m.comment.isNullOrBlank()) {
+                            Text(m.comment.orEmpty())
+                        }
                     }
-                    HorizontalDivider()
                 }
             }
         }

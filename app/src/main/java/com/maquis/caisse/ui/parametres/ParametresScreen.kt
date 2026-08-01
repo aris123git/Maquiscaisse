@@ -194,7 +194,7 @@ class ParametresViewModel @Inject constructor(
         _ui.update {
             it.copy(
                 message = if (enabled) {
-                    "NexaPOS se lancera automatiquement au démarrage"
+                    "NexaGes se lancera automatiquement au démarrage"
                 } else {
                     "Démarrage automatique désactivé"
                 },
@@ -272,7 +272,7 @@ class ParametresViewModel @Inject constructor(
     suspend fun reload() {
         _ui.update {
             it.copy(
-                shopName = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse"),
+                shopName = settings.get(SettingsKeys.SHOP_NAME, "NexaGes"),
                 shopAddress = settings.get(SettingsKeys.SHOP_ADDRESS, ""),
                 shopPhone = settings.get(SettingsKeys.SHOP_PHONE, ""),
                 ticketFooter = settings.get(SettingsKeys.TICKET_FOOTER, "Merci pour votre visite."),
@@ -526,7 +526,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             GlassCard {
             Text("MODE KIOSQUE", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Verrouille la tablette sur NexaPOS (Lock Task Mode Android). " +
+                "Verrouille la tablette sur NexaGes (Lock Task Mode Android). " +
                     "Le PIN administrateur kiosque est distinct des codes caissier.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -549,7 +549,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                         kioskPinAction = KioskPinAction.TOGGLE_AUTO_START
                     },
                 )
-                Text("Lancer automatiquement NexaPOS au démarrage")
+                Text("Lancer automatiquement NexaGes au démarrage")
             }
             Text(
                 "PIN administrateur : ${if (ui.kioskHasPin) "••••" else "non défini"}",

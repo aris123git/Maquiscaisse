@@ -7,7 +7,7 @@ import android.util.Log
 import com.maquis.caisse.MainActivity
 
 /**
- * Relance NexaPOS après démarrage de la tablette (sans boucle ni service permanent).
+ * Relance NexaGes après démarrage de la tablette (sans boucle ni service permanent).
  */
 class BootCompletedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
@@ -27,7 +27,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
             return
         }
 
-        Log.i(TAG, "Démarrage auto NexaPOS après boot")
+        Log.i(TAG, "Démarrage auto NexaGes après boot")
         val launch = Intent(context, MainActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or

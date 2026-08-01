@@ -59,7 +59,7 @@ class DatabaseSeed @Inject constructor(
             )
         }
         if (settingsDao.get(SettingsKeys.SHOP_NAME) == null) {
-            settingsDao.upsert(AppSettingEntity(SettingsKeys.SHOP_NAME, "Maquis Caisse"))
+            settingsDao.upsert(AppSettingEntity(SettingsKeys.SHOP_NAME, "NexaGes"))
             settingsDao.upsert(AppSettingEntity(SettingsKeys.SHOP_ADDRESS, ""))
             settingsDao.upsert(AppSettingEntity(SettingsKeys.SHOP_PHONE, ""))
             settingsDao.upsert(AppSettingEntity(SettingsKeys.TICKET_FOOTER, "Merci pour votre visite."))

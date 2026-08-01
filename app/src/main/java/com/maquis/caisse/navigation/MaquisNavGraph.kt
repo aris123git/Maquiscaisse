@@ -17,7 +17,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.ui.assistant.AssistantScreen
 import com.maquis.caisse.ui.caisse.CaisseScreen
 import com.maquis.caisse.ui.categories.CategoriesScreen
@@ -38,8 +37,7 @@ import com.maquis.caisse.ui.users.UsersScreen
 fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
     val sideBarVm: SideBarViewModel = hiltViewModel()
     val currentUser by sideBarVm.currentUser.collectAsStateWithLifecycle()
-    val isAdmin = currentUser?.role == "ADMIN" ||
-        currentUser?.can(Permissions.MANAGE_USERS) == true
+    val isAdmin = currentUser?.role == "ADMIN"
 
     Scaffold(containerColor = Color.Transparent) { padding ->
         Row(
@@ -56,15 +54,8 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
                     .fillMaxSize(),
             ) {
                 composable(Routes.CAISSE) {
-                    CaisseScreen(
-                        onOrderCreated = {
-                            // Après enregistrement : liste des commandes.
-                            // Marquer payé = ouvrir la commande (clic).
-                            navController.navigate(Routes.COMMANDES) {
-                                launchSingleTop = true
-                            }
-                        },
-                    )
+                    // Après enregistrement : on reste en Caisse.
+                    CaisseScreen()
                 }
                 composable(Routes.COMMANDES) {
                     CommandesScreen(
@@ -84,29 +75,60 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
                     OrderDetailScreen(
                         orderId = orderId,
                         onBack = { navController.popBackStack() },
+                        onPaidGoToOpenOrders = {
+                            // Retour direct à la liste des commandes en cours.
+                            if (!navController.popBackStack(Routes.COMMANDES, inclusive = false)) {
+                                navController.navigate(Routes.COMMANDES) {
+                                    launchSingleTop = true
+                                }
+                            }
+                        },
                     )
                 }
                 composable(Routes.DASHBOARD) { DashboardScreen() }
                 composable(Routes.ASSISTANT) { AssistantScreen() }
-                composable(Routes.PRODUITS) { ProduitsScreen() }
-                composable(Routes.CATEGORIES) { CategoriesScreen() }
-                composable(Routes.TABLES) { TablesScreen() }
+                composable(Routes.PRODUITS) {
+                    AdminOnlyRoute(isAdmin = isAdmin, navController = navController) {
+                        ProduitsScreen()
+                    }
+                }
+                composable(Routes.CATEGORIES) {
+                    AdminOnlyRoute(isAdmin = isAdmin, navController = navController) {
+                        CategoriesScreen()
+                    }
+                }
+                composable(Routes.TABLES) {
+                    AdminOnlyRoute(isAdmin = isAdmin, navController = navController) {
+                        TablesScreen()
+                    }
+                }
                 composable(Routes.STOCK) { StockScreen() }
                 composable(Routes.RAPPORTS) { RapportsScreen() }
                 composable(Routes.UTILISATEURS) {
-                    if (!isAdmin) {
-                        LaunchedEffect(Unit) {
-                            navController.navigate(Routes.CAISSE) {
-                                popUpTo(Routes.CAISSE) { inclusive = true }
-                                launchSingleTop = true
-                            }
-                        }
-                    } else {
+                    AdminOnlyRoute(isAdmin = isAdmin, navController = navController) {
                         UsersScreen()
                     }
                 }
                 composable(Routes.PARAMETRES) { ParametresScreen() }
             }
         }
+    }
+}
+
+@Composable
+private fun AdminOnlyRoute(
+    isAdmin: Boolean,
+    navController: NavHostController,
+    content: @Composable () -> Unit,
+) {
+    if (!isAdmin) {
+        LaunchedEffect(Unit) {
+            navController.navigate(Routes.CAISSE) {
+                popUpTo(Routes.CAISSE) { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    } else {
+        content()
     }
 }

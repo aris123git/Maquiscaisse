@@ -35,7 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.maquis.caisse.core.SessionManager
-import com.maquis.caisse.domain.model.Permissions
+import com.maquis.caisse.kiosk.KioskManager
 import com.maquis.caisse.navigation.Routes
 import com.maquis.caisse.ui.theme.GestionBlue
 import com.maquis.caisse.ui.theme.SidebarAccent
@@ -54,16 +54,16 @@ private data class NavItem(
 @HiltViewModel
 class SideBarViewModel @Inject constructor(
     private val session: SessionManager,
+    private val kioskManager: KioskManager,
 ) : ViewModel() {
     val currentUser = session.currentUser
 
-    fun isAdmin(): Boolean {
-        val user = session.userOrNull() ?: return false
-        return user.role == "ADMIN" || user.can(Permissions.MANAGE_USERS)
-    }
+    fun isAdmin(): Boolean = session.userOrNull()?.role == "ADMIN"
 
     fun logout() {
         session.logout()
+        // Tablette dédiée : re-verrouille dès la déconnexion.
+        kioskManager.onSessionEnded()
     }
 }
 
@@ -83,9 +83,9 @@ fun MaquisSideBar(
         NavItem(Routes.HISTORIQUE, "Historique"),
         NavItem(Routes.ASSISTANT, "Assistant"),
         NavItem(Routes.DASHBOARD, "Tableau de bord"),
-        NavItem(Routes.PRODUITS, "Produits"),
-        NavItem(Routes.CATEGORIES, "Catégories"),
-        NavItem(Routes.TABLES, "Tables"),
+        NavItem(Routes.PRODUITS, "Produits", adminOnly = true),
+        NavItem(Routes.CATEGORIES, "Catégories", adminOnly = true),
+        NavItem(Routes.TABLES, "Tables", adminOnly = true),
         NavItem(Routes.STOCK, "Stock"),
         NavItem(Routes.RAPPORTS, "Rapports"),
         NavItem(Routes.UTILISATEURS, "Utilisateurs", adminOnly = true),
@@ -112,7 +112,7 @@ fun MaquisSideBar(
             .padding(horizontal = 12.dp, vertical = 16.dp),
     ) {
         Text(
-            "Maquis",
+            "NexaGes",
             style = MaterialTheme.typography.headlineMedium,
             color = Color.White,
         )

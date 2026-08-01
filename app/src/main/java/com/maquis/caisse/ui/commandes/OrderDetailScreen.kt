@@ -61,6 +61,7 @@ import java.util.Locale
 fun OrderDetailScreen(
     orderId: Long,
     onBack: () -> Unit,
+    onPaidGoToOpenOrders: () -> Unit = onBack,
     viewModel: OrderDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.ui.collectAsStateWithLifecycle()
@@ -69,6 +70,13 @@ fun OrderDetailScreen(
     val df = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE) }
 
     LaunchedEffect(orderId) { viewModel.load(orderId) }
+
+    LaunchedEffect(state.navigateToOpenOrders) {
+        if (state.navigateToOpenOrders) {
+            viewModel.consumeNavigateToOpenOrders()
+            onPaidGoToOpenOrders()
+        }
+    }
 
     Scaffold(
         topBar = {

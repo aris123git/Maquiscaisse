@@ -6,6 +6,7 @@ import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.data.print.EscPosPrinter
 import com.maquis.caisse.domain.model.Order
 import com.maquis.caisse.domain.model.OrderLine
+import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.domain.repository.OrderRepository
@@ -28,6 +29,8 @@ data class OrderDetailUiState(
     val canModifyOrCancel: Boolean = false,
     /** Marquer payé : admin ou caissier selon permissions. */
     val canMarkPaid: Boolean = false,
+    /** Après paiement total : retourner à Commandes en cours. */
+    val navigateToOpenOrders: Boolean = false,
 )
 
 @HiltViewModel
@@ -192,21 +195,23 @@ class OrderDetailViewModel @Inject constructor(
                 if (printer.isEnabled()) {
                     printer.printOrder(updated)
                 }
+                val fullyPaid = updated.status == OrderStatus.PAYEE
                 _ui.update {
                     it.copy(
                         order = updated,
                         isBusy = false,
-                        message = if (updated.status.label == "Payée") {
-                            "Commande payée"
-                        } else {
-                            "Paiement partiel enregistré"
-                        },
+                        message = if (fullyPaid) "Commande payée" else "Paiement partiel enregistré",
+                        navigateToOpenOrders = fullyPaid,
                     )
                 }
             } catch (e: Exception) {
                 _ui.update { it.copy(isBusy = false, error = e.message) }
             }
         }
+    }
+
+    fun consumeNavigateToOpenOrders() {
+        _ui.update { it.copy(navigateToOpenOrders = false) }
     }
 
     fun printTicket() {

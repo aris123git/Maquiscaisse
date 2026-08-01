@@ -4,11 +4,11 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
+import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.core.SettingsKeys
 import com.maquis.caisse.domain.model.Order
 import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.repository.SettingsRepository
-import com.maquis.caisse.common.MoneyFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
@@ -45,29 +45,62 @@ class EscPosPrinter @Inject constructor(
     }
 
     suspend fun printOrder(order: Order): Result<Unit> = withContext(Dispatchers.IO) {
-        if (!settings.isPrintEnabled()) return@withContext Result.success(Unit)
+        if (!settings.isPrintEnabled()) {
+            return@withContext Result.failure(IllegalStateException("Impression désactivée"))
+        }
         printRaw(buildOrderTicket(order))
     }
 
     private suspend fun printRaw(lines: List<String>): Result<Unit> {
         val address = settings.get(SettingsKeys.PRINTER_ADDRESS, "")
         if (address.isBlank()) {
-            return Result.failure(IllegalStateException("Aucune imprimante sélectionnée"))
+            return Result.failure(IllegalStateException("Aucune imprimante sélectionnée dans Paramètres"))
         }
         return try {
             val adapter = BluetoothAdapter.getDefaultAdapter()
                 ?: return Result.failure(IllegalStateException("Bluetooth indisponible"))
-            val device = adapter.getRemoteDevice(address)
-            val socket: BluetoothSocket = device.createRfcommSocketToServiceRecord(sppUuid)
-            adapter.cancelDiscovery()
-            socket.connect()
-            socket.outputStream.use { out ->
-                writeEscPos(out, lines)
+            if (!adapter.isEnabled) {
+                return Result.failure(IllegalStateException("Bluetooth désactivé"))
             }
-            socket.close()
+            val device = adapter.getRemoteDevice(address)
+            adapter.cancelDiscovery()
+            val socket = openSocket(device)
+            try {
+                socket.outputStream.use { out ->
+                    writeEscPos(out, lines)
+                }
+            } finally {
+                try {
+                    socket.close()
+                } catch (_: Exception) {
+                }
+            }
             Result.success(Unit)
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(
+                IllegalStateException(
+                    e.message?.takeIf { it.isNotBlank() } ?: "Échec connexion imprimante",
+                    e,
+                ),
+            )
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun openSocket(device: BluetoothDevice): BluetoothSocket {
+        // Tentative standard SPP, puis canal RFCOMM 1 (souvent nécessaire sur tablettes).
+        val primary = runCatching {
+            device.createRfcommSocketToServiceRecord(sppUuid).also { it.connect() }
+        }
+        if (primary.isSuccess) return primary.getOrThrow()
+
+        val fallback = runCatching {
+            val method = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+            @Suppress("UNCHECKED_CAST")
+            (method.invoke(device, 1) as BluetoothSocket).also { it.connect() }
+        }
+        return fallback.getOrElse {
+            throw primary.exceptionOrNull() ?: it
         }
     }
 
@@ -84,7 +117,7 @@ class EscPosPrinter @Inject constructor(
 
     private suspend fun buildTestTicket(): List<String> {
         val width = settings.get(SettingsKeys.PRINT_WIDTH, "58").toIntOrNull() ?: 58
-        val name = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse")
+        val name = settings.get(SettingsKeys.SHOP_NAME, "NexaGes")
         return listOf(
             center(name, width),
             center("TEST IMPRESSION", width),
@@ -96,7 +129,7 @@ class EscPosPrinter @Inject constructor(
 
     private suspend fun buildOrderTicket(order: Order): List<String> {
         val width = settings.get(SettingsKeys.PRINT_WIDTH, "58").toIntOrNull() ?: 58
-        val shop = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse")
+        val shop = settings.get(SettingsKeys.SHOP_NAME, "NexaGes")
         val address = settings.get(SettingsKeys.SHOP_ADDRESS, "")
         val phone = settings.get(SettingsKeys.SHOP_PHONE, "")
         val footer = settings.get(SettingsKeys.TICKET_FOOTER, "Merci pour votre visite.")

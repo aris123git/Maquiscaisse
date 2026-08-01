@@ -1,5 +1,6 @@
 package com.maquis.caisse.ui.charts
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -107,4 +108,4 @@ fun CustomPeriodPickers(
 private enum class PickTarget { DAY, FROM, TO }
 
 private fun Modifier.clickableSimple(onClick: () -> Unit): Modifier =
-    this.then(androidx.compose.foundation.clickable(onClick = onClick))
+    this.clickable(onClick = onClick)

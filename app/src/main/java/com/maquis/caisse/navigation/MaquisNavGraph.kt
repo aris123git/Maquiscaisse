@@ -54,15 +54,8 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
                     .fillMaxSize(),
             ) {
                 composable(Routes.CAISSE) {
-                    CaisseScreen(
-                        onOrderCreated = {
-                            // Après enregistrement : liste des commandes.
-                            // Marquer payé = ouvrir la commande (clic).
-                            navController.navigate(Routes.COMMANDES) {
-                                launchSingleTop = true
-                            }
-                        },
-                    )
+                    // Après enregistrement : on reste en Caisse.
+                    CaisseScreen()
                 }
                 composable(Routes.COMMANDES) {
                     CommandesScreen(

@@ -47,7 +47,6 @@ import com.maquis.caisse.ui.produits.ProductTile
  */
 @Composable
 fun CaisseScreen(
-    onOrderCreated: (Long) -> Unit = {},
     viewModel: CaisseViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -226,9 +225,7 @@ fun CaisseScreen(
 
     state.savedOrderPrompt?.let { prompt ->
         AlertDialog(
-            onDismissRequest = {
-                viewModel.dismissSavedOrderPrompt(onDone = onOrderCreated)
-            },
+            onDismissRequest = viewModel::dismissSavedOrderPrompt,
             title = { Text("Commande ${prompt.order.publicId}") },
             text = {
                 Text(
@@ -239,29 +236,23 @@ fun CaisseScreen(
                                 append("\n\n")
                                 append(it)
                             }
-                            append("\n\nTu peux réimprimer le ticket, puis ouvrir la commande pour marquer payée.")
+                            append("\n\nTu restes en Caisse. Réimprime si besoin, ou OK pour continuer.")
                         }
                     } else {
-                        "Commande enregistrée. Ouvre-la dans Commandes pour marquer payée."
+                        "Commande enregistrée. Tu restes en Caisse."
                     },
                 )
             },
             confirmButton = {
-                if (prompt.printEnabled) {
-                    TextButton(onClick = viewModel::reprintSavedOrder) {
-                        Text("Imprimer le ticket", fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    TextButton(
-                        onClick = { viewModel.dismissSavedOrderPrompt(onDone = onOrderCreated) },
-                    ) { Text("Voir les commandes") }
-                }
+                TextButton(
+                    onClick = viewModel::dismissSavedOrderPrompt,
+                ) { Text("OK", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(
-                    onClick = { viewModel.dismissSavedOrderPrompt(onDone = onOrderCreated) },
-                ) {
-                    Text(if (prompt.printEnabled) "Voir les commandes" else "OK")
+                if (prompt.printEnabled) {
+                    TextButton(onClick = viewModel::reprintSavedOrder) {
+                        Text("Réimprimer")
+                    }
                 }
             },
         )

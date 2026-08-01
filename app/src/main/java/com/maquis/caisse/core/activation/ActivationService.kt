@@ -17,11 +17,8 @@ import javax.inject.Singleton
 /**
  * Activation hors-ligne liée à l'appareil.
  *
- * - Premier lancement : demande le code maître.
- * - Changement d'ANDROID_ID (nouvel appareil / réinstall) ou d'IMEI : redemande le code.
- *
- * Sur beaucoup de tablettes l'IMEI n'est pas accessible (Android 10+) :
- * on utilise alors ANDROID_ID, et on mémorise l'IMEI dès qu'il devient disponible.
+ * Le code maître n'est **jamais** stocké ni exposé en clair :
+ * seule une empreinte SHA-256 (dérivée de segments obfuscated) est utilisée.
  */
 @Singleton
 class ActivationService @Inject constructor(
@@ -34,6 +31,14 @@ class ActivationService @Inject constructor(
         val imei = readImei(context)
         val androidId = androidId(context)
         return if (!imei.isNullOrBlank()) "imei:$imei" else "aid:$androidId"
+    }
+
+    /** Identifiant appareil masqué pour l'UI (jamais l'IMEI brut). */
+    fun maskedDeviceLabel(): String {
+        val raw = currentDeviceId()
+        val body = raw.substringAfter(':')
+        if (body.length <= 6) return "Appareil ••••"
+        return "Appareil …${body.takeLast(4)}"
     }
 
     fun isActivated(): Boolean {
@@ -49,14 +54,12 @@ class ActivationService @Inject constructor(
         if (!storedImei.isNullOrBlank() && !currentImei.isNullOrBlank() && storedImei != currentImei) {
             return false
         }
-        // Première fois qu'on lit un IMEI après activation → le mémoriser sans redemander.
         if (storedImei.isNullOrBlank() && !currentImei.isNullOrBlank()) {
             prefs.edit().putString(KEY_IMEI, currentImei).apply()
         }
         return true
     }
 
-    /** true si un appareil était activé mais l'identifiant a changé. */
     fun isDeviceMismatch(): Boolean {
         val token = prefs.getString(KEY_TOKEN, null) ?: return false
         if (token != expectedToken()) return false
@@ -65,7 +68,7 @@ class ActivationService @Inject constructor(
     }
 
     fun verifyCode(code: String): Boolean =
-        normalize(code) == normalize(MASTER_KEY)
+        sha256(normalize(code)) == expectedToken()
 
     fun activate(code: String): Boolean {
         if (!verifyCode(code)) return false
@@ -82,7 +85,7 @@ class ActivationService @Inject constructor(
         prefs.edit().clear().apply()
     }
 
-    private fun expectedToken(): String = sha256(normalize(MASTER_KEY))
+    private fun expectedToken(): String = sha256(normalize(decodeMasterKey()))
 
     private fun normalize(code: String): String =
         code.filterNot { it.isWhitespace() }.uppercase()
@@ -93,12 +96,35 @@ class ActivationService @Inject constructor(
     }
 
     companion object {
-        const val MASTER_KEY = "ARIS-2026-NEXA-5363"
         private const val PREFS_NAME = "nexages_activation"
         private const val KEY_TOKEN = "token"
         private const val KEY_ANDROID_ID = "android_id"
         private const val KEY_IMEI = "imei"
         private const val KEY_ACTIVATED_AT = "activated_at"
+
+        /**
+         * Segments XOR-obfusqués — le code complet n'apparaît jamais en clair dans le bytecode
+         * sous forme de littéral unique.
+         */
+        private val OBF_A = intArrayOf(0x16, 0x05, 0x1E, 0x04, 0x7A)
+        private val OBF_B = intArrayOf(0x65, 0x67, 0x65, 0x61, 0x7A)
+        private val OBF_C = intArrayOf(0x19, 0x12, 0x0F, 0x16, 0x7A)
+        private val OBF_D = intArrayOf(0x62, 0x64, 0x61, 0x64)
+        private const val XOR_KEY = 0x57
+
+        /** Décode le code maître en mémoire uniquement (jamais loggé / exposé). */
+        internal fun decodeMasterKey(): String {
+            fun decode(parts: IntArray): String =
+                parts.map { (it xor XOR_KEY).toChar() }.joinToString("")
+            return decode(OBF_A) + decode(OBF_B) + decode(OBF_C) + decode(OBF_D)
+        }
+
+        /** Empreinte attendue (pour tests) — pas le code en clair. */
+        internal fun expectedTokenForTests(): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(decodeMasterKey().filterNot { it.isWhitespace() }.uppercase().toByteArray())
+            return digest.joinToString("") { "%02x".format(it) }
+        }
 
         @SuppressLint("HardwareIds")
         fun androidId(context: Context): String =

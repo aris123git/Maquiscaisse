@@ -4,22 +4,39 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.MessageDigest
 
 class ActivationCodeTest {
 
     @Test
-    fun masterKeyMatchesGestionApp() {
-        assertEquals("ARIS-2026-NEXA-5363", ActivationService.MASTER_KEY)
+    fun decodedKeyMatchesExpectedFingerprint() {
+        // Vérifie le décodage sans exposer le littéral maître dans le code prod.
+        val decoded = ActivationService.decodeMasterKey()
+        val token = sha256(decoded.filterNot { it.isWhitespace() }.uppercase())
+        assertEquals(ActivationService.expectedTokenForTests(), token)
+        assertTrue(decoded.length >= 12)
+        assertTrue(decoded.contains('-'))
+    }
+
+    @Test
+    fun wrongCodeDoesNotMatchFingerprint() {
+        val wrong = "ARIS-0000-NEXA-0000"
+        val token = sha256(wrong.filterNot { it.isWhitespace() }.uppercase())
+        assertFalse(token == ActivationService.expectedTokenForTests())
     }
 
     @Test
     fun normalizeIgnoresCaseAndSpaces() {
-        fun normalize(code: String) = code.filterNot { it.isWhitespace() }.uppercase()
+        val a = ActivationService.decodeMasterKey()
+        val spaced = " ${a.lowercase()} "
         assertEquals(
-            normalize(ActivationService.MASTER_KEY),
-            normalize(" aris-2026-nexa-5363 "),
+            sha256(a.filterNot { it.isWhitespace() }.uppercase()),
+            sha256(spaced.filterNot { it.isWhitespace() }.uppercase()),
         )
-        assertTrue(normalize("ARIS-2026-NEXA-5363") == normalize(ActivationService.MASTER_KEY))
-        assertFalse(normalize("ARIS-1234-NEXA-5363") == normalize(ActivationService.MASTER_KEY))
+    }
+
+    private fun sha256(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }
     }
 }

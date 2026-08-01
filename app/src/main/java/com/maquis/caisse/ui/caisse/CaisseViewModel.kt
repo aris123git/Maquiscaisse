@@ -273,8 +273,7 @@ class CaisseViewModel @Inject constructor(
 
     /**
      * Enregistre une commande sans paiement.
-     * Si l'impression est activée : tire le ticket puis propose de réimprimer.
-     * La navigation se fait via [dismissSavedOrderPrompt].
+     * Reste en Caisse ; si impression ON : tire le ticket + dialogue OK / réimprimer.
      */
     fun saveUnpaidOrder() {
         val state = _uiState.value
@@ -318,8 +317,6 @@ class CaisseViewModel @Inject constructor(
                         snackbarMessage = "Commande ${order.publicId} enregistrée",
                     )
                 }
-                // Navigation après fermeture du dialogue (voir dismissSavedOrderPrompt).
-                Unit
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -346,10 +343,9 @@ class CaisseViewModel @Inject constructor(
         }
     }
 
-    fun dismissSavedOrderPrompt(onDone: (Long) -> Unit = {}) {
-        val orderId = _uiState.value.savedOrderPrompt?.order?.id
+    /** Ferme le dialogue et reste en Caisse. */
+    fun dismissSavedOrderPrompt() {
         _uiState.update { it.copy(savedOrderPrompt = null) }
-        if (orderId != null) onDone(orderId)
     }
 
     fun openPayment() {

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -32,6 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,11 +51,11 @@ fun ActivationScreen(
     var code by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val deviceMismatch = remember { activationService.isDeviceMismatch() }
-    val deviceId = remember { activationService.currentDeviceId() }
+    val deviceLabel = remember { activationService.maskedDeviceLabel() }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { /* IMEI optionnel ; ANDROID_ID reste le repli */ }
+    ) { /* IMEI optionnel */ }
 
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -108,8 +111,7 @@ fun ActivationScreen(
                 )
                 Text(
                     if (deviceMismatch) {
-                        "L'identifiant de cet appareil a changé. " +
-                            "Saisis le code d'activation pour continuer."
+                        "Cet appareil a changé. Saisis le code d'activation fourni par l'installateur."
                     } else {
                         "Active NexaGes sur cette tablette avec le code fourni par l'installateur."
                     },
@@ -117,7 +119,7 @@ fun ActivationScreen(
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    "Appareil : ${deviceId.take(28)}${if (deviceId.length > 28) "…" else ""}",
+                    deviceLabel,
                     style = MaterialTheme.typography.labelLarge,
                     color = GestionCyan,
                 )
@@ -131,7 +133,11 @@ fun ActivationScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     label = { Text("Code d'activation") },
-                    placeholder = { Text("ARIS-····-NEXA-····") },
+                    // Jamais d'indice / aperçu du code en clair.
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Characters,
+                    ),
                     isError = error != null,
                 )
                 if (error != null) {
@@ -140,9 +146,11 @@ fun ActivationScreen(
                 Button(
                     onClick = {
                         if (activationService.activate(code)) {
+                            code = ""
                             onActivated()
                         } else {
                             error = "Code invalide"
+                            code = ""
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),

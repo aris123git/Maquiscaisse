@@ -112,7 +112,7 @@ fun MaquisSideBar(
             .padding(horizontal = 12.dp, vertical = 16.dp),
     ) {
         Text(
-            "Maquis",
+            "NexaGes",
             style = MaterialTheme.typography.headlineMedium,
             color = Color.White,
         )

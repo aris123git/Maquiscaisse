@@ -3,6 +3,8 @@ package com.maquis.caisse.ui.parametres
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -45,7 +47,6 @@ import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.core.SettingsKeys
 import com.maquis.caisse.data.backup.BackupManager
 import com.maquis.caisse.data.print.EscPosPrinter
-import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.domain.repository.SettingsRepository
 import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.kiosk.KioskManager
@@ -100,10 +101,8 @@ class ParametresViewModel @Inject constructor(
 
     fun suggestedBackupName(): String = backupManager.suggestedFileName()
 
-    fun isAdmin(): Boolean {
-        val user = session.userOrNull() ?: return false
-        return user.role == "ADMIN" || user.can(Permissions.MANAGE_USERS)
-    }
+    /** Sortie / config kiosque : uniquement le compte rôle ADMIN. */
+    fun isAdmin(): Boolean = session.userOrNull()?.role == "ADMIN"
 
     fun changeOwnPin(newPin: String, confirm: String) = viewModelScope.launch {
         if (newPin != confirm) {
@@ -124,31 +123,13 @@ class ParametresViewModel @Inject constructor(
     }
 
     fun setKioskAdminPin(currentPin: String?, newPin: String, confirm: String): Boolean {
-        if (!isAdmin()) {
-            _ui.update { it.copy(message = "Réservé à l'administrateur") }
-            return false
-        }
+        if (!requireAdminAccount()) return false
         if (newPin != confirm) {
             _ui.update { it.copy(message = "Les deux codes administrateur ne correspondent pas") }
             return false
         }
-        if (kioskManager.hasAdminPin()) {
-            when (val result = kioskManager.verifyAdminPin(currentPin.orEmpty())) {
-                is KioskSecureStore.PinVerifyResult.Ok -> Unit
-                is KioskSecureStore.PinVerifyResult.Wrong -> {
-                    _ui.update {
-                        it.copy(message = "PIN administrateur incorrect (${result.remaining} essais restants)")
-                    }
-                    return false
-                }
-                is KioskSecureStore.PinVerifyResult.LockedOut -> {
-                    _ui.update {
-                        it.copy(message = "Trop d'essais — réessaie dans ${result.secondsRemaining}s")
-                    }
-                    return false
-                }
-                KioskSecureStore.PinVerifyResult.NoPinSet -> Unit
-            }
+        if (kioskManager.hasAdminPin() && !verifyPinForAdminAction(currentPin.orEmpty())) {
+            return false
         }
         return try {
             kioskManager.setAdminPin(newPin)
@@ -162,14 +143,16 @@ class ParametresViewModel @Inject constructor(
     }
 
     fun setKioskEnabled(enabled: Boolean, adminPin: String, activity: Activity): Boolean {
-        if (!isAdmin()) {
-            _ui.update { it.copy(message = "Réservé à l'administrateur") }
-            return false
-        }
+        if (!requireAdminAccount()) return false
         if (!verifyPinForAdminAction(adminPin)) return false
         if (enabled && !kioskManager.hasAdminPin()) {
-            _ui.update { it.copy(message = "Définis d'abord le PIN administrateur kiosque") }
-            return false
+            // Auto-définit le PIN kiosque avec le code saisi (PIN compte admin).
+            try {
+                kioskManager.setAdminPin(adminPin)
+            } catch (e: Exception) {
+                _ui.update { it.copy(message = e.message ?: "Définis d'abord le PIN administrateur kiosque") }
+                return false
+            }
         }
         if (enabled) {
             kioskManager.setEnabled(true)
@@ -184,10 +167,7 @@ class ParametresViewModel @Inject constructor(
     }
 
     fun setKioskAutoStart(enabled: Boolean, adminPin: String): Boolean {
-        if (!isAdmin()) {
-            _ui.update { it.copy(message = "Réservé à l'administrateur") }
-            return false
-        }
+        if (!requireAdminAccount()) return false
         if (!verifyPinForAdminAction(adminPin)) return false
         kioskManager.setAutoStart(enabled)
         refreshKioskUi()
@@ -204,10 +184,7 @@ class ParametresViewModel @Inject constructor(
     }
 
     fun exitKioskTemporary(adminPin: String, activity: Activity): Boolean {
-        if (!isAdmin()) {
-            _ui.update { it.copy(message = "Réservé à l'administrateur") }
-            return false
-        }
+        if (!requireAdminAccount()) return false
         if (!verifyPinForAdminAction(adminPin)) return false
         kioskManager.exitKiosk(activity)
         refreshKioskUi()
@@ -219,23 +196,49 @@ class ParametresViewModel @Inject constructor(
 
     /** Vérifie le PIN admin sans quitter le kiosque (étape avant confirmation). */
     fun checkAdminPin(adminPin: String): Boolean {
-        if (!isAdmin()) {
-            _ui.update { it.copy(message = "Réservé à l'administrateur") }
-            return false
-        }
+        if (!requireAdminAccount()) return false
         return verifyPinForAdminAction(adminPin)
     }
 
+    private fun requireAdminAccount(): Boolean {
+        if (isAdmin()) return true
+        _ui.update {
+            it.copy(message = "Connecte-toi avec le compte administrateur pour gérer le kiosque")
+        }
+        return false
+    }
+
+    private fun matchesLoggedInAdminPin(pin: String): Boolean {
+        val user = session.userOrNull() ?: return false
+        return user.role == "ADMIN" && user.pin == pin
+    }
+
+    /**
+     * Accepte le PIN kiosque dédié **ou** le PIN du compte ADMIN connecté.
+     */
     private fun verifyPinForAdminAction(adminPin: String): Boolean {
+        if (adminPin.isBlank()) {
+            _ui.update { it.copy(message = "Saisis le code administrateur") }
+            return false
+        }
+        if (matchesLoggedInAdminPin(adminPin)) return true
+
         when (val result = kioskManager.verifyAdminPin(adminPin)) {
             KioskSecureStore.PinVerifyResult.Ok -> return true
             KioskSecureStore.PinVerifyResult.NoPinSet -> {
-                _ui.update { it.copy(message = "Définis d'abord le PIN administrateur kiosque") }
+                _ui.update {
+                    it.copy(
+                        message = "Code incorrect — utilise le PIN du compte Admin " +
+                            "(ou définis un PIN kiosque)",
+                    )
+                }
                 return false
             }
             is KioskSecureStore.PinVerifyResult.Wrong -> {
                 _ui.update {
-                    it.copy(message = "PIN administrateur incorrect (${result.remaining} essais restants)")
+                    it.copy(
+                        message = "Code administrateur incorrect (${result.remaining} essais restants)",
+                    )
                 }
                 return false
             }
@@ -375,10 +378,20 @@ private enum class KioskPinAction {
     EXIT_KIOSK,
 }
 
+private fun Context.findActivity(): Activity? {
+    var ctx: Context? = this
+    while (ctx is ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return ctx as? Activity
+}
+
 @Composable
 fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
-    val activity = LocalContext.current as Activity
+    val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
     var permissionsReady by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
@@ -527,7 +540,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             Text("MODE KIOSQUE", style = MaterialTheme.typography.titleLarge)
             Text(
                 "Verrouille la tablette sur NexaGes (Lock Task Mode Android). " +
-                    "Le PIN administrateur kiosque est distinct des codes caissier.",
+                    "Sortie réservée au compte Admin : saisis le PIN Admin (ou le PIN kiosque).",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -685,8 +698,9 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                         }
                     }
                     KioskPinAction.TOGGLE_ENABLED -> {
+                        val act = activity ?: return@KioskAdminPinDialog
                         val target = pendingKioskEnable ?: return@KioskAdminPinDialog
-                        if (viewModel.setKioskEnabled(target, currentPin.orEmpty(), activity)) {
+                        if (viewModel.setKioskEnabled(target, currentPin.orEmpty(), act)) {
                             kioskPinAction = null
                             pendingKioskEnable = null
                         }
@@ -726,10 +740,13 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             confirmButton = {
                 TextButton(
                     onClick = {
+                        val act = activity
                         val pin = verifiedExitPin.orEmpty()
                         confirmExitKiosk = false
                         verifiedExitPin = null
-                        viewModel.exitKioskTemporary(pin, activity)
+                        if (act != null) {
+                            viewModel.exitKioskTemporary(pin, act)
+                        }
                     },
                 ) { Text("Confirmer") }
             },
@@ -759,8 +776,8 @@ private fun KioskAdminPinDialog(
     val title = when (action) {
         KioskPinAction.SET_PIN ->
             if (hasExistingPin) "Modifier le PIN administrateur" else "PIN administrateur kiosque"
-        KioskPinAction.EXIT_KIOSK -> "Code administrateur requis"
-        else -> "Code administrateur requis"
+        KioskPinAction.EXIT_KIOSK -> "PIN du compte Admin"
+        else -> "PIN du compte Admin"
     }
 
     val canSubmit = when (action) {

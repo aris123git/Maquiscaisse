@@ -84,6 +84,14 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
                     OrderDetailScreen(
                         orderId = orderId,
                         onBack = { navController.popBackStack() },
+                        onPaidGoToOpenOrders = {
+                            // Retour direct à la liste des commandes en cours.
+                            if (!navController.popBackStack(Routes.COMMANDES, inclusive = false)) {
+                                navController.navigate(Routes.COMMANDES) {
+                                    launchSingleTop = true
+                                }
+                            }
+                        },
                     )
                 }
                 composable(Routes.DASHBOARD) { DashboardScreen() }

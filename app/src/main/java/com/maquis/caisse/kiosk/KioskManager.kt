@@ -69,15 +69,21 @@ class KioskManager @Inject constructor(
     }
 
     fun exitKiosk(activity: Activity) {
+        // D'abord lever le verrou logique pour empêcher onResume/LaunchedEffect de relancer Lock Task.
         store.temporarilyUnlocked = true
         try {
             if (isLockTaskActive(activity)) {
                 activity.stopLockTask()
             }
         } catch (_: Exception) {
-            // ignore
+            try {
+                activity.stopLockTask()
+            } catch (_: Exception) {
+                // ignore
+            }
         }
         showSystemUi(activity)
+        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     /** Désactive durablement le mode kiosque (après confirmation admin). */

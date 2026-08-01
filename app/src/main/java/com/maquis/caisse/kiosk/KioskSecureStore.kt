@@ -51,7 +51,8 @@ class KioskSecureStore @Inject constructor(
     var temporarilyUnlocked: Boolean
         get() = prefs.getBoolean(KEY_TEMP_UNLOCK, false)
         set(value) {
-            prefs.edit().putBoolean(KEY_TEMP_UNLOCK, value).apply()
+            // commit() pour que MainActivity voie l'état immédiatement (évite re-lock).
+            prefs.edit().putBoolean(KEY_TEMP_UNLOCK, value).commit()
             publish()
         }
 

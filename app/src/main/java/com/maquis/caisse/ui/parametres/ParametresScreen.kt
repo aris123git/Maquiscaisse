@@ -133,11 +133,24 @@ class ParametresViewModel @Inject constructor(
         runCatching { kioskManager.setAdminPin(adminPin) }
         if (enabled) {
             kioskManager.setEnabled(true) // persiste + active aussi le démarrage auto
-            kioskManager.enterKiosk(activity)
+            // Home / batterie avant Lock Task (sinon Settings peut être bloqué).
+            runCatching {
+                if (!kioskManager.isDeviceOwner()) {
+                    activity.startActivity(kioskManager.homeSettingsIntent())
+                }
+                kioskManager.requestIgnoreBatteryOptimizationsIntent()?.let { activity.startActivity(it) }
+            }
+            val lockOk = kioskManager.enterKiosk(activity)
+            val err = kioskManager.lastError()
             _ui.update {
                 it.copy(
-                    message = "Mode kiosque activé — tablette dédiée NexaGes " +
-                        "(même PIN que le compte Admin)",
+                    message = when {
+                        lockOk && err == null ->
+                            "Mode kiosque activé — tablette dédiée NexaGes"
+                        else ->
+                            "Kiosque activé mais Lock Task incomplet. " +
+                                (err ?: "Définis NexaGes comme Home + Device Owner.")
+                    },
                 )
             }
         } else {
@@ -170,10 +183,26 @@ class ParametresViewModel @Inject constructor(
         if (!verifyPinForAdminAction(adminPin)) return false
         kioskManager.exitKiosk(activity)
         refreshKioskUi()
+        val minutes = KioskSecureStore.TEMP_UNLOCK_MS / 60_000L
         _ui.update {
-            it.copy(message = "Mode kiosque quitté temporairement (actif au prochain redémarrage)")
+            it.copy(
+                message = "Kiosque quitté ${minutes} min — re-verrouillage automatique ensuite",
+            )
         }
         return true
+    }
+
+    fun openHomeSettings(activity: Activity) {
+        runCatching { activity.startActivity(kioskManager.homeSettingsIntent()) }
+    }
+
+    fun openBatteryExemption(activity: Activity) {
+        val intent = kioskManager.requestIgnoreBatteryOptimizationsIntent()
+        if (intent != null) {
+            runCatching { activity.startActivity(intent) }
+        } else {
+            _ui.update { it.copy(message = "Optimisation batterie déjà ignorée pour NexaGes") }
+        }
     }
 
     /** Vérifie le PIN admin sans quitter le kiosque (étape avant confirmation). */
@@ -532,6 +561,9 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                 "PIN kiosque = PIN du compte Admin (modifiable via « Changer mon code PIN »).",
                 style = MaterialTheme.typography.bodyLarge,
             )
+            ui.message?.takeIf { it.contains("Lock Task", ignoreCase = true) || it.contains("kiosque", ignoreCase = true) }?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             Text("Administration", style = MaterialTheme.typography.titleLarge)
@@ -539,7 +571,15 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                 onClick = { kioskPinAction = KioskPinAction.EXIT_KIOSK },
                 enabled = ui.kioskEnabled && ui.kioskLockedNow,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-            ) { Text("Quitter le mode kiosque") }
+            ) { Text("Quitter le mode kiosque (3 min)") }
+            OutlinedButton(
+                onClick = { activity?.let(viewModel::openHomeSettings) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("Choisir NexaGes comme accueil (Home)") }
+            OutlinedButton(
+                onClick = { activity?.let(viewModel::openBatteryExemption) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("Ignorer l'optimisation batterie") }
             Text(
                 if (ui.kioskDeviceOwner) {
                     "Device Owner actif — verrouillage système renforcé."
@@ -686,8 +726,8 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             title = { Text("Quitter le mode kiosque ?") },
             text = {
                 Text(
-                    "La navigation Android sera temporairement débloquée. " +
-                        "Le mode kiosque se réactivera après un redémarrage si toujours activé.",
+                    "Navigation Android débloquée pendant 3 minutes, " +
+                        "puis re-verrouillage automatique. Déconnexion Admin relock aussi.",
                 )
             },
             confirmButton = {

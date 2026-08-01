@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.maquis.caisse.core.SessionManager
+import com.maquis.caisse.kiosk.KioskManager
 import com.maquis.caisse.navigation.Routes
 import com.maquis.caisse.ui.theme.GestionBlue
 import com.maquis.caisse.ui.theme.SidebarAccent
@@ -53,6 +54,7 @@ private data class NavItem(
 @HiltViewModel
 class SideBarViewModel @Inject constructor(
     private val session: SessionManager,
+    private val kioskManager: KioskManager,
 ) : ViewModel() {
     val currentUser = session.currentUser
 
@@ -60,6 +62,8 @@ class SideBarViewModel @Inject constructor(
 
     fun logout() {
         session.logout()
+        // Tablette dédiée : re-verrouille dès la déconnexion.
+        kioskManager.onSessionEnded()
     }
 }
 

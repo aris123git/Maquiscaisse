@@ -15,13 +15,13 @@ data class KioskState(
     val autoStart: Boolean = false,
     val temporarilyUnlocked: Boolean = false,
     val hasAdminPin: Boolean = false,
+    val lastError: String? = null,
 ) {
     val shouldLockNow: Boolean get() = enabled && !temporarilyUnlocked
 }
 
 /**
  * Stockage local du mode kiosque et du secret PIN admin (hash + sel uniquement).
- * Accessible de façon synchrone pour BootReceiver / Lock Task.
  */
 @Singleton
 class KioskSecureStore @Inject constructor(
@@ -36,7 +36,6 @@ class KioskSecureStore @Inject constructor(
     var enabled: Boolean
         get() = prefs.getBoolean(KEY_ENABLED, false)
         set(value) {
-            // commit() : persistance immédiate (survit au reboot / kill process).
             prefs.edit().putBoolean(KEY_ENABLED, value).commit()
             publish()
         }
@@ -48,12 +47,30 @@ class KioskSecureStore @Inject constructor(
             publish()
         }
 
-    /** Sortie admin temporaire : ne pas re-verrouiller jusqu'au prochain démarrage. */
+    /**
+     * Sortie admin temporaire avec expiration (pas jusqu'au reboot).
+     * Si le délai est dépassé, [consumeExpiredUnlock] rétablit le verrou.
+     */
     var temporarilyUnlocked: Boolean
-        get() = prefs.getBoolean(KEY_TEMP_UNLOCK, false)
+        get() {
+            consumeExpiredUnlock()
+            return prefs.getBoolean(KEY_TEMP_UNLOCK, false)
+        }
         set(value) {
-            // commit() pour que MainActivity voie l'état immédiatement (évite re-lock).
-            prefs.edit().putBoolean(KEY_TEMP_UNLOCK, value).commit()
+            val editor = prefs.edit().putBoolean(KEY_TEMP_UNLOCK, value)
+            if (value) {
+                editor.putLong(KEY_TEMP_UNLOCK_UNTIL, System.currentTimeMillis() + TEMP_UNLOCK_MS)
+            } else {
+                editor.putLong(KEY_TEMP_UNLOCK_UNTIL, 0L)
+            }
+            editor.commit()
+            publish()
+        }
+
+    var lastError: String?
+        get() = prefs.getString(KEY_LAST_ERROR, null)
+        set(value) {
+            prefs.edit().putString(KEY_LAST_ERROR, value).commit()
             publish()
         }
 
@@ -72,7 +89,7 @@ class KioskSecureStore @Inject constructor(
             .putString(KEY_PIN_HASH, hash)
             .putInt(KEY_FAILED, 0)
             .putLong(KEY_LOCKOUT_UNTIL, 0L)
-            .apply()
+            .commit()
         publish()
     }
 
@@ -90,7 +107,7 @@ class KioskSecureStore @Inject constructor(
         val hash = prefs.getString(KEY_PIN_HASH, "") ?: ""
         val ok = KioskPinCrypto.verify(pin, salt, hash)
         return if (ok) {
-            prefs.edit().putInt(KEY_FAILED, 0).putLong(KEY_LOCKOUT_UNTIL, 0L).apply()
+            prefs.edit().putInt(KEY_FAILED, 0).putLong(KEY_LOCKOUT_UNTIL, 0L).commit()
             PinVerifyResult.Ok
         } else {
             val fails = prefs.getInt(KEY_FAILED, 0) + 1
@@ -99,10 +116,10 @@ class KioskSecureStore @Inject constructor(
                 prefs.edit()
                     .putInt(KEY_FAILED, fails)
                     .putLong(KEY_LOCKOUT_UNTIL, until)
-                    .apply()
+                    .commit()
                 PinVerifyResult.LockedOut(((until - now) / 1000L).coerceAtLeast(1L))
             } else {
-                prefs.edit().putInt(KEY_FAILED, fails).apply()
+                prefs.edit().putInt(KEY_FAILED, fails).commit()
                 PinVerifyResult.Wrong(remaining = MAX_ATTEMPTS - fails)
             }
         }
@@ -110,6 +127,31 @@ class KioskSecureStore @Inject constructor(
 
     fun clearTemporarilyUnlockedOnBoot() {
         temporarilyUnlocked = false
+    }
+
+    /** true si une sortie temporaire venait d'expirer (relock nécessaire). */
+    fun consumeExpiredUnlock(): Boolean {
+        if (!prefs.getBoolean(KEY_TEMP_UNLOCK, false)) return false
+        val until = prefs.getLong(KEY_TEMP_UNLOCK_UNTIL, 0L)
+        if (until > 0L && System.currentTimeMillis() >= until) {
+            prefs.edit()
+                .putBoolean(KEY_TEMP_UNLOCK, false)
+                .putLong(KEY_TEMP_UNLOCK_UNTIL, 0L)
+                .commit()
+            publish()
+            return true
+        }
+        return false
+    }
+
+    fun tempUnlockRemainingMs(): Long {
+        if (!prefs.getBoolean(KEY_TEMP_UNLOCK, false)) return 0L
+        val until = prefs.getLong(KEY_TEMP_UNLOCK_UNTIL, 0L)
+        return (until - System.currentTimeMillis()).coerceAtLeast(0L)
+    }
+
+    fun clearLastError() {
+        lastError = null
     }
 
     private fun lockoutDurationMs(failCount: Int): Long {
@@ -121,12 +163,25 @@ class KioskSecureStore @Inject constructor(
         return minutes * 60_000L
     }
 
-    private fun readState(): KioskState = KioskState(
-        enabled = prefs.getBoolean(KEY_ENABLED, false),
-        autoStart = prefs.getBoolean(KEY_AUTO_START, false),
-        temporarilyUnlocked = prefs.getBoolean(KEY_TEMP_UNLOCK, false),
-        hasAdminPin = hasAdminPin(),
-    )
+    private fun readState(): KioskState {
+        // Expire avant lecture UI.
+        if (prefs.getBoolean(KEY_TEMP_UNLOCK, false)) {
+            val until = prefs.getLong(KEY_TEMP_UNLOCK_UNTIL, 0L)
+            if (until > 0L && System.currentTimeMillis() >= until) {
+                prefs.edit()
+                    .putBoolean(KEY_TEMP_UNLOCK, false)
+                    .putLong(KEY_TEMP_UNLOCK_UNTIL, 0L)
+                    .commit()
+            }
+        }
+        return KioskState(
+            enabled = prefs.getBoolean(KEY_ENABLED, false),
+            autoStart = prefs.getBoolean(KEY_AUTO_START, false),
+            temporarilyUnlocked = prefs.getBoolean(KEY_TEMP_UNLOCK, false),
+            hasAdminPin = hasAdminPin(),
+            lastError = prefs.getString(KEY_LAST_ERROR, null),
+        )
+    }
 
     private fun publish() {
         _state.update { readState() }
@@ -144,10 +199,15 @@ class KioskSecureStore @Inject constructor(
         private const val KEY_ENABLED = "kiosk_enabled"
         private const val KEY_AUTO_START = "kiosk_auto_start"
         private const val KEY_TEMP_UNLOCK = "kiosk_temp_unlock"
+        private const val KEY_TEMP_UNLOCK_UNTIL = "kiosk_temp_unlock_until"
         private const val KEY_PIN_HASH = "admin_pin_hash"
         private const val KEY_PIN_SALT = "admin_pin_salt"
         private const val KEY_FAILED = "admin_pin_failed"
         private const val KEY_LOCKOUT_UNTIL = "admin_pin_lockout_until"
+        private const val KEY_LAST_ERROR = "kiosk_last_error"
+
+        /** Sortie temporaire : 3 minutes puis re-verrouillage auto. */
+        const val TEMP_UNLOCK_MS = 3L * 60L * 1000L
 
         const val MIN_PIN_LENGTH = 4
         const val MAX_PIN_LENGTH = 8

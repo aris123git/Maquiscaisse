@@ -33,6 +33,9 @@ class BootCompletedReceiver : BroadcastReceiver() {
                 "Démarrage auto NexaGes (action=$action, autoStart=${store.autoStart}, kiosk=${store.enabled})",
             )
             BootLaunchHelper.launchApp(context, fromBoot = true)
+            if (store.enabled) {
+                KioskWatchdog.schedule(context.applicationContext)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Échec boot launch: ${e.message}", e)
         } finally {

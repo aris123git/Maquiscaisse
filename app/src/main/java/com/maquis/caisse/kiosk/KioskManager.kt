@@ -7,7 +7,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.view.View
 import android.view.WindowManager
 import androidx.core.view.WindowCompat
@@ -19,7 +22,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Mode kiosque Android officiel : Lock Task Mode (+ Device Owner si provisionné).
+ * Mode kiosque tablette dédiée NexaGes : Lock Task + Home + watchdog.
  */
 @Singleton
 class KioskManager @Inject constructor(
@@ -39,10 +42,18 @@ class KioskManager @Inject constructor(
 
     fun hasAdminPin(): Boolean = store.hasAdminPin()
 
-    /** Verrouillage effectif (activé et pas de sortie admin temporaire). */
-    fun shouldLockNow(): Boolean = store.enabled && !store.temporarilyUnlocked
+    fun shouldLockNow(): Boolean {
+        store.consumeExpiredUnlock()
+        return store.enabled && !store.temporarilyUnlocked
+    }
 
     fun isDeviceOwner(): Boolean = dpm.isDeviceOwnerApp(appContext.packageName)
+
+    fun lastError(): String? = store.lastError
+
+    fun clearLastError() = store.clearLastError()
+
+    fun tempUnlockRemainingMs(): Long = store.tempUnlockRemainingMs()
 
     fun isLockTaskActive(activity: Activity): Boolean {
         val am = activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -55,24 +66,42 @@ class KioskManager @Inject constructor(
     }
 
     /**
-     * Prépare le Device Owner (si applicable) puis entre en Lock Task Mode.
+     * Entre en kiosque. Retourne false si Lock Task a échoué (message dans [lastError]).
      */
-    fun enterKiosk(activity: Activity) {
-        if (!shouldLockNow()) return
+    fun enterKiosk(activity: Activity): Boolean {
+        store.consumeExpiredUnlock()
+        if (!shouldLockNow()) return false
         prepareDeviceOwnerPolicies()
         hideSystemUi(activity)
-        activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        activity.window.addFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+        )
+        bringTaskToFront(activity)
+        var ok = true
         try {
             if (!isLockTaskActive(activity)) {
                 activity.startLockTask()
             }
-        } catch (_: Exception) {
-            // Sans Device Owner / pinning, Android peut refuser — on garde le reste.
+            if (!isLockTaskActive(activity) && !isDeviceOwner()) {
+                ok = false
+                store.lastError =
+                    "Lock Task non actif : sans Device Owner, Android peut refuser. " +
+                    "Provisionne Device Owner ou définis NexaGes comme Home."
+            } else {
+                store.clearLastError()
+            }
+        } catch (e: Exception) {
+            ok = false
+            store.lastError = e.message ?: "Échec Lock Task"
         }
+        KioskWatchdog.schedule(appContext)
+        return ok
     }
 
     fun exitKiosk(activity: Activity) {
-        // D'abord lever le verrou logique pour empêcher onResume/LaunchedEffect de relancer Lock Task.
         store.temporarilyUnlocked = true
         try {
             if (isLockTaskActive(activity)) {
@@ -82,23 +111,23 @@ class KioskManager @Inject constructor(
             try {
                 activity.stopLockTask()
             } catch (_: Exception) {
-                // ignore
             }
         }
         showSystemUi(activity)
         activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Watchdog reprendra le relock après expiration (3 min).
+        KioskWatchdog.schedule(appContext)
     }
 
-    /** Désactive durablement le mode kiosque (après confirmation admin). */
     fun disableKiosk(activity: Activity) {
         store.enabled = false
         store.temporarilyUnlocked = false
+        KioskWatchdog.cancel(appContext)
         try {
             if (isLockTaskActive(activity)) {
                 activity.stopLockTask()
             }
         } catch (_: Exception) {
-            // ignore
         }
         if (isDeviceOwner()) {
             try {
@@ -110,21 +139,23 @@ class KioskManager @Inject constructor(
                     dpm.setStatusBarDisabled(adminComponent, false)
                 }
             } catch (_: Exception) {
-                // ignore
             }
         }
+        clearPreferredHomeIfDeviceOwner()
         showSystemUi(activity)
+        store.clearLastError()
     }
 
     fun setEnabled(enabled: Boolean) {
         store.enabled = enabled
         if (enabled) {
-            // Kiosque activé ⇒ démarrage auto aussi (option persistante après reboot).
             store.autoStart = true
             store.temporarilyUnlocked = false
             prepareDeviceOwnerPolicies()
             setAsPreferredHomeIfDeviceOwner()
+            KioskWatchdog.schedule(appContext)
         } else {
+            KioskWatchdog.cancel(appContext)
             clearPreferredHomeIfDeviceOwner()
         }
     }
@@ -139,8 +170,16 @@ class KioskManager @Inject constructor(
         store.verifyAdminPin(pin)
 
     fun onBootCompleted() {
-        // Après reboot : annuler une sortie temporaire et relancer le verrouillage.
         store.clearTemporarilyUnlockedOnBoot()
+        KioskWatchdog.schedule(appContext)
+    }
+
+    /** Déconnexion / fin de session : re-verrouille si kiosque actif. */
+    fun onSessionEnded() {
+        if (!store.enabled) return
+        store.temporarilyUnlocked = false
+        store.clearLastError()
+        KioskWatchdog.schedule(appContext)
     }
 
     fun prepareDeviceOwnerPolicies() {
@@ -158,12 +197,11 @@ class KioskManager @Inject constructor(
                 dpm.setKeyguardDisabled(adminComponent, true)
             }
             setAsPreferredHomeIfDeviceOwner()
-        } catch (_: Exception) {
-            // ignore
+        } catch (e: Exception) {
+            store.lastError = "Device Owner : ${e.message}"
         }
     }
 
-    /** Device Owner : NexaGes devient l'écran d'accueil → ouverture garantie au boot. */
     private fun setAsPreferredHomeIfDeviceOwner() {
         if (!isDeviceOwner()) return
         try {
@@ -174,7 +212,6 @@ class KioskManager @Inject constructor(
             val activity = ComponentName(appContext, MainActivity::class.java)
             dpm.addPersistentPreferredActivity(adminComponent, filter, activity)
         } catch (_: Exception) {
-            // ignore
         }
     }
 
@@ -183,7 +220,6 @@ class KioskManager @Inject constructor(
         try {
             dpm.clearPackagePersistentPreferredActivities(adminComponent, appContext.packageName)
         } catch (_: Exception) {
-            // ignore
         }
     }
 
@@ -191,6 +227,7 @@ class KioskManager @Inject constructor(
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)
         val controller = WindowInsetsControllerCompat(activity.window, activity.window.decorView)
         controller.hide(WindowInsetsCompat.Type.systemBars())
+        // Barres système en mode immersif sticky (réapparaissent brièvement au swipe).
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         @Suppress("DEPRECATION")
@@ -210,10 +247,43 @@ class KioskManager @Inject constructor(
         controller.show(WindowInsetsCompat.Type.systemBars())
     }
 
+    fun bringTaskToFront(activity: Activity) {
+        try {
+            val am = activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            am.moveTaskToFront(activity.taskId, ActivityManager.MOVE_TASK_WITH_HOME)
+        } catch (_: Exception) {
+            try {
+                val launch = BootLaunchHelper.buildLaunchIntent(activity, fromBoot = false)
+                activity.startActivity(launch)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Intent pour choisir NexaGes comme application d'accueil. */
+    fun homeSettingsIntent(): Intent =
+        Intent(Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    fun requestIgnoreBatteryOptimizationsIntent(): Intent? {
+        val pm = appContext.getSystemService(PowerManager::class.java) ?: return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
+        if (pm.isIgnoringBatteryOptimizations(appContext.packageName)) return null
+        return Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:${appContext.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    fun isIgnoringBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val pm = appContext.getSystemService(PowerManager::class.java) ?: return true
+        return pm.isIgnoringBatteryOptimizations(appContext.packageName)
+    }
+
     fun deviceOwnerSetupHint(): String =
-        "Pour un verrouillage total et un démarrage auto garanti, " +
-            "provisionner Device Owner une fois via ADB :\n" +
-            "adb shell dpm set-device-owner " +
+        "Tablette dédiée recommandée :\n" +
+            "1) adb shell dpm set-device-owner " +
             "${appContext.packageName}/.kiosk.NexaDeviceAdminReceiver\n" +
-            "Sinon : Réglages Android → Applications par défaut → Application d'accueil → NexaGes."
+            "2) Réglages → Application d'accueil → NexaGes\n" +
+            "3) Ignorer l'optimisation batterie pour NexaGes"
 }

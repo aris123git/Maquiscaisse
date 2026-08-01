@@ -7,22 +7,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -32,6 +27,8 @@ import androidx.lifecycle.viewModelScope
 import com.maquis.caisse.domain.assistant.AssistantAnalyzer
 import com.maquis.caisse.domain.assistant.AssistantSuggestion
 import com.maquis.caisse.domain.assistant.SuggestionLevel
+import com.maquis.caisse.ui.common.GlassCard
+import com.maquis.caisse.ui.common.PageHeader
 import com.maquis.caisse.ui.theme.GestionBlue
 import com.maquis.caisse.ui.theme.GestionDanger
 import com.maquis.caisse.ui.theme.GestionWarning
@@ -78,21 +75,13 @@ fun AssistantScreen(viewModel: AssistantViewModel = hiltViewModel()) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column {
-                Text("Assistant", style = MaterialTheme.typography.headlineMedium, color = GestionBlue)
-                Text(
-                    "Analyse tes données et propose des actions.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            TextButton(onClick = viewModel::refresh, enabled = !loading) {
-                Text(if (loading) "Analyse…" else "Actualiser")
-            }
-        }
+        PageHeader(
+            title = "Assistant",
+            subtitle = "Analyse tes données et propose des actions.",
+            actionLabel = if (loading) "Analyse…" else "Actualiser",
+            onAction = viewModel::refresh,
+            actionEnabled = !loading,
+        )
 
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -122,27 +111,19 @@ private fun SuggestionCard(suggestion: AssistantSuggestion) {
         SuggestionLevel.WARNING -> "À surveiller"
         SuggestionLevel.INFO -> "Idée"
     }
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = Color.White.copy(alpha = 0.9f),
-        tonalElevation = 1.dp,
-        shadowElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(
-                modifier = Modifier
-                    .background(tint, RoundedCornerShape(999.dp))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    "$badge · ${suggestion.category}",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            Text(suggestion.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(suggestion.detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    GlassCard {
+        Box(
+            modifier = Modifier
+                .background(tint, RoundedCornerShape(999.dp))
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+        ) {
+            Text(
+                "$badge · ${suggestion.category}",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
+        Text(suggestion.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(suggestion.detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

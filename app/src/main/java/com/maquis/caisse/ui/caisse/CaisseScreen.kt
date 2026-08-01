@@ -188,6 +188,7 @@ fun CaisseScreen(
                     maxDigits = Constants.MAX_QUANTITY_DIGITS,
                     confirmLabel = "OK",
                     confirmEnabled = overlay.quantityInput.isNotEmpty(),
+                    inputSessionKey = "${overlay.productId}-${overlay.isEditing}",
                     onDeleteLine = if (overlay.isEditing) {
                         { viewModel.deleteOverlayLine() }
                     } else {

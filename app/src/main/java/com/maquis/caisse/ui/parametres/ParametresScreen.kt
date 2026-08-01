@@ -51,6 +51,7 @@ import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.kiosk.KioskManager
 import com.maquis.caisse.kiosk.KioskSecureStore
 import com.maquis.caisse.ui.common.DropdownField
+import com.maquis.caisse.ui.common.PageHeader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -423,7 +424,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Paramètres", style = MaterialTheme.typography.headlineMedium)
+        PageHeader(title = "Paramètres", subtitle = "Commerce, impression, kiosque")
         OutlinedButton(
             onClick = { changeOwnPin = true },
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),

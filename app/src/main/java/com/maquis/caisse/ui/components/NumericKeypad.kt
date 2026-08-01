@@ -8,26 +8,34 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.maquis.caisse.core.Constants
+import com.maquis.caisse.ui.theme.GestionBlue
 
 /**
- * Pavé numérique générique et réutilisable (quantité, paiement, remise,
- * remboursement, dettes, avoirs…).
+ * Pavé numérique générique (quantité, montant reçu…).
  *
- * [value] est une chaîne de chiffres (pas de séparateur décimal — montants FCFA entiers).
+ * Dès l'ouverture, la première frappe **remplace** la valeur par défaut
+ * (ex. "1" → "3", "5000" → "1") au lieu de concaténer.
  */
 @Composable
 fun NumericKeypad(
@@ -43,7 +51,15 @@ fun NumericKeypad(
     allowLeadingZero: Boolean = false,
     onDeleteLine: (() -> Unit)? = null,
     deleteLabel: String = "Supprimer",
+    /** Change cette clé pour réarmer le mode « remplacer » (nouveau produit / champ). */
+    inputSessionKey: Any? = Unit,
 ) {
+    var replaceNext by remember(inputSessionKey) { mutableStateOf(true) }
+
+    LaunchedEffect(inputSessionKey) {
+        replaceNext = true
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -67,15 +83,23 @@ fun NumericKeypad(
             )
         }
 
-        Text(
-            text = value.ifEmpty { "0" },
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary,
-            textAlign = TextAlign.Center,
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = GestionBlue.copy(alpha = 0.08f),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 16.dp),
-        )
+                .padding(vertical = 12.dp),
+        ) {
+            Text(
+                text = value.ifEmpty { "0" },
+                style = MaterialTheme.typography.headlineMedium,
+                color = GestionBlue,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 14.dp),
+            )
+        }
 
         val keys = listOf(
             listOf("1", "2", "3"),
@@ -93,19 +117,35 @@ fun NumericKeypad(
                     FilledTonalButton(
                         onClick = {
                             when (key) {
-                                "C" -> onValueChange("")
-                                "⌫" -> onValueChange(value.dropLast(1))
+                                "C" -> {
+                                    onValueChange("")
+                                    replaceNext = true
+                                }
+                                "⌫" -> {
+                                    if (replaceNext) {
+                                        onValueChange("")
+                                        replaceNext = false
+                                    } else {
+                                        onValueChange(value.dropLast(1))
+                                    }
+                                }
                                 else -> {
-                                    val next = appendDigit(
-                                        current = value,
-                                        digit = key,
-                                        maxDigits = maxDigits,
-                                        allowLeadingZero = allowLeadingZero,
-                                    )
+                                    val next = if (replaceNext) {
+                                        replaceNext = false
+                                        startDigit(digit = key, allowLeadingZero = allowLeadingZero)
+                                    } else {
+                                        appendDigit(
+                                            current = value,
+                                            digit = key,
+                                            maxDigits = maxDigits,
+                                            allowLeadingZero = allowLeadingZero,
+                                        )
+                                    }
                                     onValueChange(next)
                                 }
                             }
                         },
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .weight(1f)
                             .height(56.dp),
@@ -127,9 +167,8 @@ fun NumericKeypad(
 
         Button(
             onClick = onConfirm,
-            // [confirmEnabled] est la source de vérité (le caller peut autoriser
-            // une confirmation même si le champ actif est vide, ex. paiement mixte).
             enabled = confirmEnabled,
+            shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -154,7 +193,12 @@ fun NumericKeypad(
     }
 }
 
-private fun appendDigit(
+internal fun startDigit(digit: String, allowLeadingZero: Boolean): String {
+    if (!allowLeadingZero && digit == "0") return "0"
+    return digit
+}
+
+internal fun appendDigit(
     current: String,
     digit: String,
     maxDigits: Int,

@@ -23,6 +23,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.domain.model.Order
+import com.maquis.caisse.ui.common.PageHeader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -40,12 +41,9 @@ fun CommandesScreen(
     BoxWithConstraints(Modifier.fillMaxSize().padding(12.dp)) {
         val compact = maxWidth < 700.dp
         Column(Modifier.fillMaxSize()) {
-            Text("Commandes en cours", style = MaterialTheme.typography.headlineMedium)
-            Text(
-                "Touche une commande pour marquer comme payée.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
+            PageHeader(
+                title = "Commandes en cours",
+                subtitle = "Touche une commande pour marquer comme payée.",
             )
             OutlinedTextField(
                 value = ui.query,

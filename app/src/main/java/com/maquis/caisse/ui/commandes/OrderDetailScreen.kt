@@ -317,7 +317,8 @@ private fun PayOrderDialog(
     onConfirm: (PaymentMode, Long, Boolean) -> Unit,
 ) {
     var mode by remember { mutableStateOf(PaymentMode.CASH) }
-    var amountText by remember { mutableStateOf(remaining.toString()) }
+    var amountText by remember(remaining) { mutableStateOf(remaining.toString()) }
+    var replaceNext by remember(remaining, mode) { mutableStateOf(true) }
     var partial by remember { mutableStateOf(false) }
     val received = amountText.filter { it.isDigit() }.toLongOrNull() ?: 0L
     val change = if (!partial && mode == PaymentMode.CASH && received > remaining) {
@@ -346,7 +347,15 @@ private fun PayOrderDialog(
                 }
                 OutlinedTextField(
                     value = amountText,
-                    onValueChange = { amountText = it.filter { c -> c.isDigit() } },
+                    onValueChange = { raw ->
+                        val digits = raw.filter { c -> c.isDigit() }
+                        amountText = if (replaceNext) {
+                            replaceNext = false
+                            digits.takeLast(1).ifEmpty { "" }
+                        } else {
+                            digits
+                        }
+                    },
                     label = { Text(if (mode == PaymentMode.CASH) "Montant reçu" else "Montant") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,

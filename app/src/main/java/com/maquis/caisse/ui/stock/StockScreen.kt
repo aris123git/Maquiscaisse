@@ -31,6 +31,7 @@ import com.maquis.caisse.domain.model.StockMovement
 import com.maquis.caisse.domain.repository.StockRepository
 import com.maquis.caisse.domain.usecase.ObserveProductsUseCase
 import com.maquis.caisse.ui.common.DropdownField
+import com.maquis.caisse.ui.common.PageHeader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -102,7 +103,7 @@ fun StockScreen(viewModel: StockViewModel = hiltViewModel()) {
 
     Row(modifier = Modifier.fillMaxSize().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Stock", style = MaterialTheme.typography.headlineMedium)
+            PageHeader(title = "Stock", subtitle = "Mouvements et alertes")
             DropdownField(
                 label = "Produit",
                 selected = selected,

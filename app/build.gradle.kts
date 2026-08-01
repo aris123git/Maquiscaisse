@@ -13,8 +13,8 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 11
-        versionName = "0.7.1-order-pay-flow"
+        versionCode = 12
+        versionName = "0.7.2-ux-dashboard"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -149,6 +149,7 @@ fun PaymentDialog(
                         allowLeadingZero = false,
                         confirmLabel = if (payment.isSaving) "…" else "Encaisser",
                         confirmEnabled = canConfirm,
+                        inputSessionKey = "${payment.mode}-${payment.activeField}",
                     )
                 } else {
                     Button(

@@ -35,6 +35,7 @@ import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.ui.commandes.HistoryPeriod
 import com.maquis.caisse.ui.common.DateRanges
 import com.maquis.caisse.ui.common.DropdownField
+import com.maquis.caisse.ui.common.PageHeader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -143,7 +144,7 @@ fun RapportsScreen(viewModel: RapportsViewModel = hiltViewModel()) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Rapports", style = MaterialTheme.typography.headlineMedium)
+            PageHeader(title = "Rapports", subtitle = "Analyse des ventes et recettes")
             TextButton(onClick = viewModel::refresh) { Text("Actualiser") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

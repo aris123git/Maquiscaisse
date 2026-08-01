@@ -18,6 +18,8 @@ class AppUserPermissionsTest {
         assertTrue(caissier.can(Permissions.SELL))
         assertFalse(caissier.can(Permissions.CANCEL_ORDER))
         assertFalse(caissier.can(Permissions.MANAGE_USERS))
+        assertFalse(caissier.can(Permissions.CREATE_PRODUCT))
+        assertFalse(caissier.can(Permissions.EDIT_PRODUCT))
     }
 
     @Test

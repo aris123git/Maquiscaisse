@@ -39,8 +39,20 @@ data class AppUser(
     val isActive: Boolean = true,
     val isWaitress: Boolean = false,
 ) {
-    fun can(permission: String): Boolean =
-        role == "ADMIN" || permission in permissions
+    /**
+     * Droits effectifs : permissions stockées + droits par défaut du rôle
+     * (évite qu'un caissier créé/ancien perde « marquer payé »).
+     */
+    fun can(permission: String): Boolean {
+        if (role == "ADMIN") return true
+        if (permission in permissions) return true
+        val roleDefaults = when (role) {
+            "CAISSIER" -> Permissions.CAISSIER_DEFAULT
+            "SERVEUSE" -> Permissions.SERVEUSE_DEFAULT
+            else -> emptyList()
+        }
+        return permission in roleDefaults
+    }
 }
 
 data class DiningTable(

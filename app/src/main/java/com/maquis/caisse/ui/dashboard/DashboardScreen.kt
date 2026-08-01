@@ -5,17 +5,14 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,17 +27,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.common.MoneyFormat
-import com.maquis.caisse.domain.model.WaitressStats
+import com.maquis.caisse.domain.model.ChartPoint
+import com.maquis.caisse.ui.charts.ChartCard
+import com.maquis.caisse.ui.charts.CustomPeriodPickers
+import com.maquis.caisse.ui.charts.PeriodSelector
 import com.maquis.caisse.ui.common.GlassCard
 import com.maquis.caisse.ui.common.PageHeader
 import com.maquis.caisse.ui.theme.GestionBlue
@@ -48,18 +44,9 @@ import com.maquis.caisse.ui.theme.GestionCyan
 import com.maquis.caisse.ui.theme.GestionSuccess
 import com.maquis.caisse.ui.theme.GestionWarning
 
-private val ChartPalette = listOf(
-    GestionBlue,
-    GestionCyan,
-    GestionSuccess,
-    GestionWarning,
-    Color(0xFF8B5CF6),
-    Color(0xFFEC4899),
-)
-
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
-    val stats by viewModel.stats.collectAsStateWithLifecycle()
+    val ui by viewModel.ui.collectAsStateWithLifecycle()
     var selectedWaitressId by remember { mutableStateOf<Long?>(null) }
 
     Column(
@@ -71,53 +58,65 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
     ) {
         PageHeader(
             title = "Tableau de bord",
-            subtitle = "Aujourd'hui — graphes en haut, chiffres en bas",
+            subtitle = "Courbes, barres, camembert — choisis période et type",
             actionLabel = "Actualiser",
             onAction = viewModel::refresh,
         )
 
-        val s = stats
+        GlassCard {
+            Text("Période", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PeriodSelector(selected = ui.period, onSelect = viewModel::onPeriod)
+            CustomPeriodPickers(
+                period = ui.period,
+                customDayMs = ui.customDayMs,
+                customFromMs = ui.customFromMs,
+                customToMs = ui.customToMs,
+                onCustomDay = viewModel::onCustomDay,
+                onCustomRange = viewModel::onCustomRange,
+            )
+        }
+
+        val s = ui.stats
         if (s == null) {
             Text("Chargement…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             return
         }
 
-        GlassCard {
-            Text("Ventes par serveuse", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Touche une serveuse pour voir le détail.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Spacer(Modifier.height(10.dp))
-            WaitressBarChart(
-                rows = s.waitressStats,
-                selectedId = selectedWaitressId,
-                onSelect = { id ->
-                    selectedWaitressId = if (selectedWaitressId == id) null else id
-                },
-            )
-        }
+        ChartCard(
+            title = "Évolution du CA",
+            subtitle = "CA généré sur la période",
+            points = ui.timeSeries,
+            chartType = ui.salesChartType,
+            onChartTypeChange = viewModel::onSalesChartType,
+        )
 
-        GlassCard {
-            Text("Top produits", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            HorizontalBarChart(
-                labels = s.topProducts.map { it.productName },
-                values = s.topProducts.map { it.revenue.toFloat() },
-                barColor = GestionBlue,
-            )
-        }
+        ChartCard(
+            title = "Ventes par serveuse",
+            subtitle = "Touche une serveuse dans la liste pour le détail",
+            points = s.waitressStats.map {
+                ChartPoint(label = it.waitressName, value = it.caGenerated.toFloat())
+            },
+            chartType = ui.waitressChartType,
+            onChartTypeChange = viewModel::onWaitressChartType,
+        )
 
-        GlassCard {
-            Text("Top catégories", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            HorizontalBarChart(
-                labels = s.topCategories.map { it.categoryName },
-                values = s.topCategories.map { it.revenue.toFloat() },
-                barColor = GestionCyan,
-            )
-        }
+        ChartCard(
+            title = "Top produits",
+            points = s.topProducts.map {
+                ChartPoint(label = it.productName, value = it.revenue.toFloat())
+            },
+            chartType = ui.productsChartType,
+            onChartTypeChange = viewModel::onProductsChartType,
+        )
+
+        ChartCard(
+            title = "Top catégories",
+            points = s.topCategories.map {
+                ChartPoint(label = it.categoryName, value = it.revenue.toFloat())
+            },
+            chartType = ui.categoriesChartType,
+            onChartTypeChange = viewModel::onCategoriesChartType,
+        )
 
         val selected = s.waitressStats.firstOrNull { it.waitressId == selectedWaitressId }
         AnimatedVisibility(
@@ -144,7 +143,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
         }
 
         Text(
-            "Chiffres du jour",
+            "Chiffres",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = GestionBlue,
@@ -169,7 +168,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
         GlassCard {
             Text("Serveuses", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (s.waitressStats.isEmpty()) {
-                Text("Aucune vente serveuse aujourd'hui", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Aucune vente serveuse sur cette période", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 s.waitressStats.forEach { w ->
                     val isSelected = w.waitressId == selectedWaitressId
@@ -192,7 +191,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(Modifier.weight(1f)) {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(w.waitressName, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     "${w.orderCount} cmd · ${w.paidCount} payées",
@@ -232,127 +231,5 @@ private fun DetailLine(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun WaitressBarChart(
-    rows: List<WaitressStats>,
-    selectedId: Long?,
-    onSelect: (Long?) -> Unit,
-) {
-    if (rows.isEmpty()) {
-        Text("Pas encore de données", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        return
-    }
-    val max = rows.maxOf { it.caGenerated }.coerceAtLeast(1L).toFloat()
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(150.dp),
-        ) {
-            val barSlot = size.width / rows.size
-            val barWidth = barSlot * 0.55f
-            rows.forEachIndexed { index, row ->
-                val h = (row.caGenerated / max) * (size.height * 0.85f)
-                val left = barSlot * index + (barSlot - barWidth) / 2f
-                val top = size.height - h
-                val selected = row.waitressId == selectedId
-                val color = ChartPalette[index % ChartPalette.size]
-                    .copy(alpha = if (selected) 1f else 0.7f)
-                drawRoundRect(
-                    color = color,
-                    topLeft = Offset(left, top),
-                    size = Size(barWidth, h.coerceAtLeast(8f)),
-                    cornerRadius = CornerRadius(10f, 10f),
-                )
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            rows.forEachIndexed { index, row ->
-                val selected = row.waitressId == selectedId
-                val color = ChartPalette[index % ChartPalette.size]
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(color.copy(alpha = if (selected) 0.22f else 0.10f))
-                        .clickable { onSelect(row.waitressId) }
-                        .padding(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(
-                        row.waitressName,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = color,
-                    )
-                    Text(
-                        MoneyFormat.format(row.caGenerated),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HorizontalBarChart(
-    labels: List<String>,
-    values: List<Float>,
-    barColor: Color,
-) {
-    if (labels.isEmpty()) {
-        Text("Pas encore de données", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        return
-    }
-    val max = values.maxOrNull()?.coerceAtLeast(1f) ?: 1f
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        labels.zip(values).forEach { (label, value) ->
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(
-                        label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        MoneyFormat.format(value.toLong()),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = barColor,
-                    )
-                }
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(12.dp),
-                ) {
-                    drawRoundRect(
-                        color = barColor.copy(alpha = 0.15f),
-                        cornerRadius = CornerRadius(8f, 8f),
-                        size = size,
-                    )
-                    drawRoundRect(
-                        color = barColor,
-                        cornerRadius = CornerRadius(8f, 8f),
-                        size = Size(size.width * (value / max), size.height),
-                    )
-                }
-            }
-        }
     }
 }

@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -23,8 +25,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.domain.model.AppUser
+import com.maquis.caisse.domain.model.ChartPoint
 import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.model.PaymentMode
+import com.maquis.caisse.ui.charts.ChartCard
+import com.maquis.caisse.ui.charts.CustomPeriodPickers
+import com.maquis.caisse.ui.charts.PeriodSelector
 import com.maquis.caisse.ui.common.DropdownField
 import com.maquis.caisse.ui.common.PageHeader
 import com.maquis.caisse.ui.common.PillTone
@@ -109,7 +115,7 @@ private fun HistoryListPane(
     Column(modifier = modifier) {
         PageHeader(
             title = "Historique",
-            subtitle = "Toutes les commandes filtrables",
+            subtitle = "Commandes + graphes filtrables",
         )
         TextPill("${displayed.size} résultats", PillTone.INFO)
         OutlinedTextField(
@@ -119,22 +125,20 @@ private fun HistoryListPane(
             singleLine = true,
             placeholder = { Text("ID, date, heure, serveuse, table, produit…") },
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            DropdownField(
-                label = "Période",
-                selected = ui.period,
-                options = HistoryPeriod.entries,
-                optionLabel = {
-                    when (it) {
-                        HistoryPeriod.TODAY -> "Aujourd'hui"
-                        HistoryPeriod.WEEK -> "7 jours"
-                        HistoryPeriod.MONTH -> "30 jours"
-                        HistoryPeriod.ALL -> "Tout"
-                    }
-                },
-                onSelect = { it?.let(viewModel::onPeriod) },
-                modifier = Modifier.weight(1f),
-            )
+        Text("Période", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        PeriodSelector(selected = ui.period, onSelect = viewModel::onPeriod)
+        CustomPeriodPickers(
+            period = ui.period,
+            customDayMs = ui.customDayMs,
+            customFromMs = ui.customFromMs,
+            customToMs = ui.customToMs,
+            onCustomDay = viewModel::onCustomDay,
+            onCustomRange = viewModel::onCustomRange,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        ) {
             DropdownField(
                 label = "Statut",
                 selected = ui.status,
@@ -145,11 +149,6 @@ private fun HistoryListPane(
                 nullLabel = "Tous",
                 modifier = Modifier.weight(1f),
             )
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        ) {
             DropdownField(
                 label = "Serveuse",
                 selected = ui.waitresses.firstOrNull { it.id == ui.waitressId },
@@ -160,6 +159,11 @@ private fun HistoryListPane(
                 nullLabel = "Toutes",
                 modifier = Modifier.weight(1f),
             )
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        ) {
             DropdownField(
                 label = "Paiement",
                 selected = ui.paymentMode,
@@ -213,7 +217,7 @@ private fun HistoryStatsPane(
     fillProductList: Boolean,
 ) {
     Column(
-        modifier = modifier,
+        modifier = modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text("Stats serveuse", style = MaterialTheme.typography.titleLarge)
@@ -241,14 +245,29 @@ private fun HistoryStatsPane(
             Text("Aucune donnée pour cette période", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        Text("Par catégorie", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
-        ui.categoryRows.forEach { row ->
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(row.categoryName, Modifier.weight(1.2f))
-                Text("${row.quantity}", Modifier.weight(0.5f))
-                Text(MoneyFormat.format(row.revenue), Modifier.weight(1f))
-            }
-        }
+        ChartCard(
+            title = "Évolution du CA",
+            points = ui.timeSeries,
+            chartType = ui.salesChartType,
+            onChartTypeChange = viewModel::onSalesChartType,
+        )
+        ChartCard(
+            title = "Par catégorie",
+            points = ui.categoryRows.map {
+                ChartPoint(label = it.categoryName, value = it.revenue.toFloat())
+            },
+            chartType = ui.categoriesChartType,
+            onChartTypeChange = viewModel::onCategoriesChartType,
+        )
+        ChartCard(
+            title = "Par produit",
+            points = ui.productRows.take(12).map {
+                ChartPoint(label = it.productName, value = it.revenue.toFloat())
+            },
+            chartType = ui.productsChartType,
+            onChartTypeChange = viewModel::onProductsChartType,
+        )
+
         if (ui.categoryRows.isNotEmpty()) {
             val totalQty = ui.categoryRows.sumOf { it.quantity }
             val totalRev = ui.categoryRows.sumOf { it.revenue }
@@ -260,15 +279,15 @@ private fun HistoryStatsPane(
             }
         }
 
-        Text("Par produit", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
-        LazyColumn(
+        Text("Liste produits", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
+        Column(
             modifier = if (fillProductList) {
-                Modifier.weight(1f)
+                Modifier.heightIn(max = 280.dp)
             } else {
                 Modifier.heightIn(max = 240.dp)
             },
         ) {
-            items(ui.productRows, key = { it.productName }) { row ->
+            ui.productRows.forEach { row ->
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,

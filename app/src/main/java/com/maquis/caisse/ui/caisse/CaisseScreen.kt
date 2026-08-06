@@ -13,18 +13,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -157,9 +160,7 @@ fun CaisseScreen(
                 onLineLongPress = viewModel::onCartLineLongPress,
                 onValidate = viewModel::openPayment,
                 onClear = viewModel::clearCart,
-                onSaveOrder = {
-                    viewModel.saveUnpaidOrder(onCreated = onOrderCreated)
-                },
+                onSaveOrder = { viewModel.saveUnpaidOrder() },
                 modifier = Modifier
                     .weight(0.72f)
                     .fillMaxHeight()
@@ -220,6 +221,49 @@ fun CaisseScreen(
         TicketDialog(
             sale = sale,
             onDismiss = viewModel::dismissTicket,
+        )
+    }
+
+    state.savedOrderPrompt?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.dismissSavedOrderPrompt(onDone = onOrderCreated)
+            },
+            title = { Text("Commande ${prompt.order.publicId}") },
+            text = {
+                Text(
+                    if (prompt.printEnabled) {
+                        buildString {
+                            append("Commande enregistrée.")
+                            prompt.printMessage?.let {
+                                append("\n\n")
+                                append(it)
+                            }
+                            append("\n\nTu peux réimprimer le ticket, puis ouvrir la commande pour marquer payée.")
+                        }
+                    } else {
+                        "Commande enregistrée. Ouvre-la dans Commandes pour marquer payée."
+                    },
+                )
+            },
+            confirmButton = {
+                if (prompt.printEnabled) {
+                    TextButton(onClick = viewModel::reprintSavedOrder) {
+                        Text("Imprimer le ticket", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    TextButton(
+                        onClick = { viewModel.dismissSavedOrderPrompt(onDone = onOrderCreated) },
+                    ) { Text("Voir les commandes") }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.dismissSavedOrderPrompt(onDone = onOrderCreated) },
+                ) {
+                    Text(if (prompt.printEnabled) "Voir les commandes" else "OK")
+                }
+            },
         )
     }
 }

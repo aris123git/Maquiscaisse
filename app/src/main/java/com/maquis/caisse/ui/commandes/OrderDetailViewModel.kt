@@ -43,9 +43,17 @@ class OrderDetailViewModel @Inject constructor(
     private fun isAdmin(): Boolean =
         session.userOrNull()?.role == "ADMIN"
 
+    private fun canMarkPaid(): Boolean {
+        val user = session.userOrNull() ?: return false
+        // Admin + caissier (rôle) + permission explicite
+        return user.role == "ADMIN" ||
+            user.role == "CAISSIER" ||
+            user.can(Permissions.MARK_PAID)
+    }
+
     private fun permissionFlags() = Pair(
         first = isAdmin(),
-        second = session.can(Permissions.MARK_PAID),
+        second = canMarkPaid(),
     )
 
     fun load(orderId: Long) {
@@ -154,8 +162,8 @@ class OrderDetailViewModel @Inject constructor(
      * @param payFull si true, encaisse le reste (avec monnaie si reçu > reste)
      */
     fun markPaid(mode: PaymentMode, amountReceived: Long, payFull: Boolean) {
-        if (!session.can(Permissions.MARK_PAID)) {
-            _ui.update { it.copy(error = "Permission insuffisante") }
+        if (!canMarkPaid()) {
+            _ui.update { it.copy(error = "Permission insuffisante pour encaisser") }
             return
         }
         val order = _ui.value.order ?: return

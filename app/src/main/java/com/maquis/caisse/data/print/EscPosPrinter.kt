@@ -23,6 +23,8 @@ import javax.inject.Singleton
 /**
  * Impression thermique Bluetooth ESC/POS (optionnelle).
  * Ne bloque jamais l'app si désactivée ou sans imprimante.
+ * 
+ * VERSION: Stable avec retry robuste et délais optimisés
  */
 @Singleton
 class EscPosPrinter @Inject constructor(

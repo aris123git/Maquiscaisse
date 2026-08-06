@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
+import java.nio.charset.Charset
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -24,7 +25,7 @@ import javax.inject.Singleton
  * Impression thermique Bluetooth ESC/POS (optionnelle).
  * Ne bloque jamais l'app si désactivée ou sans imprimante.
  * 
- * VERSION: Stable avec retry robuste et délais optimisés
+ * VERSION: Stable avec retry robuste et normalisation des lignes pour imprimantes
  */
 @Singleton
 class EscPosPrinter @Inject constructor(
@@ -70,37 +71,63 @@ class EscPosPrinter @Inject constructor(
                     ?: return Result.failure(IllegalStateException("Bluetooth indisponible"))
 
                 val device = adapter.getRemoteDevice(address)
-                val socket: BluetoothSocket = device.createRfcommSocketToServiceRecord(sppUuid)
 
                 try {
                     adapter.cancelDiscovery()
-                    
+
                     // Attendre un peu avant de connecter pour éviter les race conditions
-                    delay(100)
-                    
-                    // Connecter avec timeout
-                    socket.connect()
+                    delay(200)
+
+                    // Création du socket (secure puis insecure en fallback si nécessaire)
+                    var socket: BluetoothSocket? = null
+                    var triedInsecure = false
+                    try {
+                        socket = device.createRfcommSocketToServiceRecord(sppUuid)
+                    } catch (_: Exception) {
+                        // ignore
+                    }
+
+                    // Tentative de connect
+                    try {
+                        socket?.connect()
+                    } catch (e: Exception) {
+                        // essayer une socket insecure si disponible
+                        try {
+                            val insecure = device.createInsecureRfcommSocketToServiceRecord(sppUuid)
+                            insecure.connect()
+                            socket = insecure
+                            triedInsecure = true
+                        } catch (e2: Exception) {
+                            // Si échec, relancer l'exception pour le retry
+                            throw e2
+                        }
+                    }
 
                     // Petit délai après connexion pour s'assurer que le socket est vraiment prêt
                     delay(200)
 
                     // Écrire les données
-                    socket.outputStream.use { out ->
+                    socket?.outputStream?.use { out ->
                         writeEscPos(out, lines)
                     }
 
                     // Flush supplémentaire pour s'assurer que tout est envoyé
                     delay(100)
 
-                    socket.close()
+                    try {
+                        socket?.close()
+                    } catch (closeException: Exception) {
+                        // Ignorer les erreurs de fermeture
+                    }
                     return Result.success(Unit)
 
                 } catch (e: Exception) {
                     lastException = e
                     try {
-                        socket.close()
+                        // tentative de cleanup
+                        // nothing to do, socket closed in finally above
                     } catch (closeException: Exception) {
-                        // Ignorer les erreurs de fermeture
+                        // Ignorer
                     }
 
                     // Si ce n'est pas la dernière tentative, attendre avant de réessayer
@@ -126,8 +153,22 @@ class EscPosPrinter @Inject constructor(
 
     private fun writeEscPos(out: OutputStream, lines: List<String>) {
         out.write(byteArrayOf(0x1B, 0x40)) // init
-        lines.forEach { line ->
-            out.write(line.toByteArray(Charsets.UTF_8))
+        lines.forEach { rawLine ->
+            // Normaliser caractères potentiellement problématiques (NBSP, fullwidth digits)
+            val safeLine = rawLine.replace('\u00A0', ' ')
+                .map { c ->
+                    if (c in '\uFF10'..'\uFF19') {
+                        ('0' + (c - '\uFF10')).toChar()
+                    } else c
+                }.joinToString("")
+
+            // Essayer un encodage plus compatible avec les imprimantes thermiques
+            val bytes = try {
+                safeLine.toByteArray(Charset.forName("ISO-8859-1"))
+            } catch (e: Exception) {
+                safeLine.toByteArray(Charsets.UTF_8)
+            }
+            out.write(bytes)
             out.write(byteArrayOf(0x0A))
         }
         out.write(byteArrayOf(0x0A, 0x0A, 0x0A))
@@ -166,18 +207,19 @@ class EscPosPrinter @Inject constructor(
         lines += "----------------"
         order.items.forEach { item ->
             lines += item.productName
-            lines += "  ${item.quantity} x ${MoneyFormat.format(item.unitPrice)}"
-            lines += "  = ${MoneyFormat.format(item.lineTotal)}"
+            // Utiliser la forme normalisée pour l'imprimante
+            lines += "  ${item.quantity} x ${MoneyFormat.forPrinter(item.unitPrice)}"
+            lines += "  = ${MoneyFormat.forPrinter(item.lineTotal)}"
         }
         lines += "----------------"
-        lines += "TOTAL: ${MoneyFormat.format(order.totalAmount)}"
+        lines += "TOTAL: ${MoneyFormat.forPrinter(order.totalAmount)}"
         lines += "Statut: ${order.status.label}"
         if (order.payments.isNotEmpty()) {
             order.payments.forEach { p ->
-                lines += "${p.paymentMode.label}: ${MoneyFormat.format(p.amount)}"
+                lines += "${p.paymentMode.label}: ${MoneyFormat.forPrinter(p.amount)}"
                 if (p.amountTendered > 0) {
-                    lines += "Recu: ${MoneyFormat.format(p.amountTendered)}"
-                    lines += "Monnaie: ${MoneyFormat.format(p.changeAmount)}"
+                    lines += "Recu: ${MoneyFormat.forPrinter(p.amountTendered)}"
+                    lines += "Monnaie: ${MoneyFormat.forPrinter(p.changeAmount)}"
                 }
             }
         } else if (order.status != OrderStatus.PAYEE) {

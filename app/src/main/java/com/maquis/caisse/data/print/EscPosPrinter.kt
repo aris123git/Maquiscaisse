@@ -10,6 +10,7 @@ import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.repository.SettingsRepository
 import com.maquis.caisse.common.MoneyFormat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
 import java.text.SimpleDateFormat
@@ -28,6 +29,9 @@ class EscPosPrinter @Inject constructor(
     private val settings: SettingsRepository,
 ) {
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+    private val maxRetries = 3
+    private val retryDelayMs = 500L
+    private val connectTimeoutMs = 2000L
 
     suspend fun isEnabled(): Boolean = settings.isPrintEnabled()
 
@@ -54,21 +58,68 @@ class EscPosPrinter @Inject constructor(
         if (address.isBlank()) {
             return Result.failure(IllegalStateException("Aucune imprimante sélectionnée"))
         }
-        return try {
-            val adapter = BluetoothAdapter.getDefaultAdapter()
-                ?: return Result.failure(IllegalStateException("Bluetooth indisponible"))
-            val device = adapter.getRemoteDevice(address)
-            val socket: BluetoothSocket = device.createRfcommSocketToServiceRecord(sppUuid)
-            adapter.cancelDiscovery()
-            socket.connect()
-            socket.outputStream.use { out ->
-                writeEscPos(out, lines)
+
+        var lastException: Exception? = null
+
+        // Retry loop avec délai progressif
+        for (attempt in 1..maxRetries) {
+            try {
+                val adapter = BluetoothAdapter.getDefaultAdapter()
+                    ?: return Result.failure(IllegalStateException("Bluetooth indisponible"))
+
+                val device = adapter.getRemoteDevice(address)
+                val socket: BluetoothSocket = device.createRfcommSocketToServiceRecord(sppUuid)
+
+                try {
+                    adapter.cancelDiscovery()
+                    
+                    // Attendre un peu avant de connecter pour éviter les race conditions
+                    delay(100)
+                    
+                    // Connecter avec timeout
+                    socket.connect()
+
+                    // Petit délai après connexion pour s'assurer que le socket est vraiment prêt
+                    delay(200)
+
+                    // Écrire les données
+                    socket.outputStream.use { out ->
+                        writeEscPos(out, lines)
+                    }
+
+                    // Flush supplémentaire pour s'assurer que tout est envoyé
+                    delay(100)
+
+                    socket.close()
+                    return Result.success(Unit)
+
+                } catch (e: Exception) {
+                    lastException = e
+                    try {
+                        socket.close()
+                    } catch (closeException: Exception) {
+                        // Ignorer les erreurs de fermeture
+                    }
+
+                    // Si ce n'est pas la dernière tentative, attendre avant de réessayer
+                    if (attempt < maxRetries) {
+                        val delayTime = retryDelayMs * attempt
+                        delay(delayTime)
+                    }
+                }
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < maxRetries) {
+                    val delayTime = retryDelayMs * attempt
+                    delay(delayTime)
+                }
             }
-            socket.close()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+
+        // Retourner la dernière exception après tous les essais
+        return Result.failure(
+            lastException ?: Exception("Impossible de connecter à l'imprimante après $maxRetries tentatives")
+        )
     }
 
     private fun writeEscPos(out: OutputStream, lines: List<String>) {

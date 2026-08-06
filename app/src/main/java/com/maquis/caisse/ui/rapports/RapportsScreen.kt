@@ -24,17 +24,23 @@ import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.domain.model.AppUser
 import com.maquis.caisse.domain.model.Category
 import com.maquis.caisse.domain.model.CategorySalesRow
+import com.maquis.caisse.domain.model.ChartPoint
+import com.maquis.caisse.domain.model.ChartType
 import com.maquis.caisse.domain.model.DashboardStats
 import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.domain.model.ProductSalesRow
+import com.maquis.caisse.domain.model.StatsPeriod
 import com.maquis.caisse.domain.model.WaitressStats
 import com.maquis.caisse.domain.repository.CategoryRepository
 import com.maquis.caisse.domain.repository.OrderRepository
 import com.maquis.caisse.domain.repository.UserRepository
-import com.maquis.caisse.ui.commandes.HistoryPeriod
+import com.maquis.caisse.ui.charts.ChartCard
+import com.maquis.caisse.ui.charts.CustomPeriodPickers
+import com.maquis.caisse.ui.charts.PeriodSelector
 import com.maquis.caisse.ui.common.DateRanges
 import com.maquis.caisse.ui.common.DropdownField
+import com.maquis.caisse.ui.common.GlassCard
 import com.maquis.caisse.ui.common.PageHeader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,7 +53,10 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class RapportsUiState(
-    val period: HistoryPeriod = HistoryPeriod.TODAY,
+    val period: StatsPeriod = StatsPeriod.TODAY,
+    val customDayMs: Long = System.currentTimeMillis(),
+    val customFromMs: Long = DateRanges.todayBounds().first,
+    val customToMs: Long = DateRanges.todayBounds().second,
     val waitressId: Long? = null,
     val category: String? = null,
     val status: OrderStatus? = null,
@@ -56,6 +65,11 @@ data class RapportsUiState(
     val waitressStats: List<WaitressStats> = emptyList(),
     val categories: List<CategorySalesRow> = emptyList(),
     val products: List<ProductSalesRow> = emptyList(),
+    val timeSeries: List<ChartPoint> = emptyList(),
+    val salesChartType: ChartType = ChartType.CURVE,
+    val waitressChartType: ChartType = ChartType.BAR_VERTICAL,
+    val categoriesChartType: ChartType = ChartType.PIE,
+    val productsChartType: ChartType = ChartType.BAR_HORIZONTAL,
 )
 
 @HiltViewModel
@@ -76,8 +90,20 @@ class RapportsViewModel @Inject constructor(
         refresh()
     }
 
-    fun onPeriod(p: HistoryPeriod) {
+    fun onPeriod(p: StatsPeriod) {
         _ui.update { it.copy(period = p) }
+        refresh()
+    }
+
+    fun onCustomDay(ms: Long) {
+        _ui.update { it.copy(customDayMs = ms, period = StatsPeriod.CUSTOM_DAY) }
+        refresh()
+    }
+
+    fun onCustomRange(fromMs: Long, toMs: Long) {
+        _ui.update {
+            it.copy(customFromMs = fromMs, customToMs = toMs, period = StatsPeriod.CUSTOM_RANGE)
+        }
         refresh()
     }
 
@@ -101,15 +127,21 @@ class RapportsViewModel @Inject constructor(
         refresh()
     }
 
+    fun onSalesChartType(t: ChartType) = _ui.update { it.copy(salesChartType = t) }
+    fun onWaitressChartType(t: ChartType) = _ui.update { it.copy(waitressChartType = t) }
+    fun onCategoriesChartType(t: ChartType) = _ui.update { it.copy(categoriesChartType = t) }
+    fun onProductsChartType(t: ChartType) = _ui.update { it.copy(productsChartType = t) }
+
     fun refresh() {
         viewModelScope.launch {
             val state = _ui.value
-            val (from, to) = when (state.period) {
-                HistoryPeriod.TODAY -> DateRanges.todayBounds()
-                HistoryPeriod.WEEK -> DateRanges.lastDaysBounds(7)
-                HistoryPeriod.MONTH -> DateRanges.lastDaysBounds(30)
-                HistoryPeriod.ALL -> DateRanges.allTimeBounds()
-            }
+            val (from, to) = DateRanges.boundsFor(
+                state.period,
+                customDayMs = state.customDayMs,
+                customFromMs = state.customFromMs,
+                customToMs = state.customToMs,
+            )
+            val grain = DateRanges.grainFor(state.period, from, to)
             val dash = orderRepository.dashboard(from, to)
             val wStats = orderRepository.waitressStats(from, to, state.waitressId)
             var cats = orderRepository.categorySales(from, to, state.waitressId)
@@ -124,6 +156,7 @@ class RapportsViewModel @Inject constructor(
                     waitressStats = wStats,
                     categories = cats,
                     products = products.take(50),
+                    timeSeries = orderRepository.salesTimeSeries(from, to, grain, state.waitressId),
                 )
             }
         }
@@ -141,28 +174,27 @@ fun RapportsScreen(viewModel: RapportsViewModel = hiltViewModel()) {
             .fillMaxSize()
             .padding(16.dp)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            PageHeader(title = "Rapports", subtitle = "Analyse des ventes et recettes")
+            PageHeader(title = "Rapports", subtitle = "Courbes et analyses filtrables")
             TextButton(onClick = viewModel::refresh) { Text("Actualiser") }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            DropdownField(
-                label = "Période",
-                selected = ui.period,
-                options = HistoryPeriod.entries,
-                optionLabel = {
-                    when (it) {
-                        HistoryPeriod.TODAY -> "Aujourd'hui"
-                        HistoryPeriod.WEEK -> "7 jours"
-                        HistoryPeriod.MONTH -> "30 jours"
-                        HistoryPeriod.ALL -> "Tout"
-                    }
-                },
-                onSelect = { it?.let(viewModel::onPeriod) },
-                modifier = Modifier.weight(1f),
+
+        GlassCard {
+            Text("Période", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PeriodSelector(selected = ui.period, onSelect = viewModel::onPeriod)
+            CustomPeriodPickers(
+                period = ui.period,
+                customDayMs = ui.customDayMs,
+                customFromMs = ui.customFromMs,
+                customToMs = ui.customToMs,
+                onCustomDay = viewModel::onCustomDay,
+                onCustomRange = viewModel::onCustomRange,
             )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             DropdownField(
                 label = "Serveuse",
                 selected = waitresses.firstOrNull { it.id == ui.waitressId },
@@ -209,13 +241,50 @@ fun RapportsScreen(viewModel: RapportsViewModel = hiltViewModel()) {
 
         val d = ui.dashboard
         if (d != null) {
-            Text("CA généré : ${MoneyFormat.format(d.caGenerated)}", fontWeight = FontWeight.Bold)
-            Text("CA encaissé : ${MoneyFormat.format(d.caCollected)}", fontWeight = FontWeight.Bold)
-            Text("Reste à encaisser : ${MoneyFormat.format(d.toCollect)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Text("Nombre de commandes : ${d.ordersToday}")
+            GlassCard {
+                Text("CA généré : ${MoneyFormat.format(d.caGenerated)}", fontWeight = FontWeight.Bold)
+                Text("CA encaissé : ${MoneyFormat.format(d.caCollected)}", fontWeight = FontWeight.Bold)
+                Text(
+                    "Reste à encaisser : ${MoneyFormat.format(d.toCollect)}",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text("Nombre de commandes : ${d.ordersToday}")
+            }
         }
 
-        Text("Performance des serveuses", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
+        ChartCard(
+            title = "Évolution du CA",
+            points = ui.timeSeries,
+            chartType = ui.salesChartType,
+            onChartTypeChange = viewModel::onSalesChartType,
+        )
+        ChartCard(
+            title = "Performance des serveuses",
+            points = ui.waitressStats.map {
+                ChartPoint(label = it.waitressName, value = it.caGenerated.toFloat())
+            },
+            chartType = ui.waitressChartType,
+            onChartTypeChange = viewModel::onWaitressChartType,
+        )
+        ChartCard(
+            title = "Catégories vendues",
+            points = ui.categories.map {
+                ChartPoint(label = it.categoryName, value = it.revenue.toFloat())
+            },
+            chartType = ui.categoriesChartType,
+            onChartTypeChange = viewModel::onCategoriesChartType,
+        )
+        ChartCard(
+            title = "Produits vendus",
+            points = ui.products.take(12).map {
+                ChartPoint(label = it.productName, value = it.revenue.toFloat())
+            },
+            chartType = ui.productsChartType,
+            onChartTypeChange = viewModel::onProductsChartType,
+        )
+
+        Text("Détail serveuses", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
         ui.waitressStats.forEach {
             Text(
                 "${it.waitressName} · cmd ${it.orderCount} · généré ${MoneyFormat.format(it.caGenerated)} · " +
@@ -223,12 +292,12 @@ fun RapportsScreen(viewModel: RapportsViewModel = hiltViewModel()) {
             )
         }
 
-        Text("Catégories vendues", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
+        Text("Détail catégories", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
         ui.categories.forEach {
             Text("${it.categoryName} · ${it.quantity} · ${MoneyFormat.format(it.revenue)}")
         }
 
-        Text("Produits vendus", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
+        Text("Détail produits", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
         ui.products.forEach {
             Text("${it.productName} (${it.categoryName}) · ${it.quantity} · ${MoneyFormat.format(it.revenue)}")
         }

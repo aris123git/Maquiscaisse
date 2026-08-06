@@ -1,6 +1,8 @@
 package com.maquis.caisse.domain.repository
 
+import com.maquis.caisse.domain.model.BucketGrain
 import com.maquis.caisse.domain.model.CategorySalesRow
+import com.maquis.caisse.domain.model.ChartPoint
 import com.maquis.caisse.domain.model.CreateOrderRequest
 import com.maquis.caisse.domain.model.DashboardStats
 import com.maquis.caisse.domain.model.Order
@@ -37,4 +39,12 @@ interface OrderRepository {
     suspend fun categorySales(fromMs: Long, toMs: Long, waitressId: Long?): List<CategorySalesRow>
     suspend fun productSales(fromMs: Long, toMs: Long, waitressId: Long?): List<ProductSalesRow>
     suspend fun dashboard(fromMs: Long, toMs: Long): DashboardStats
+
+    /** Série CA généré / encaissé par heure, jour, semaine ou mois. */
+    suspend fun salesTimeSeries(
+        fromMs: Long,
+        toMs: Long,
+        grain: BucketGrain,
+        waitressId: Long? = null,
+    ): List<ChartPoint>
 }

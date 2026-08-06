@@ -11,7 +11,9 @@ import com.maquis.caisse.data.local.entity.OrderEntity
 import com.maquis.caisse.data.local.entity.OrderItemEntity
 import com.maquis.caisse.data.local.entity.OrderPaymentEntity
 import com.maquis.caisse.data.local.entity.StockMovementEntity
+import com.maquis.caisse.domain.model.BucketGrain
 import com.maquis.caisse.domain.model.CategorySalesRow
+import com.maquis.caisse.domain.model.ChartPoint
 import com.maquis.caisse.domain.model.CreateOrderRequest
 import com.maquis.caisse.domain.model.DashboardStats
 import com.maquis.caisse.domain.model.Order
@@ -21,6 +23,9 @@ import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.domain.model.ProductSalesRow
 import com.maquis.caisse.domain.model.WaitressStats
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import com.maquis.caisse.domain.order.OrderPublicId
 import com.maquis.caisse.domain.payment.PaymentCalculator
 import com.maquis.caisse.domain.repository.OrderRepository
@@ -471,6 +476,116 @@ class OrderRepositoryImpl @Inject constructor(
                 waitressStats = waitressStats(fromMs, toMs, null),
             )
         }
+
+    override suspend fun salesTimeSeries(
+        fromMs: Long,
+        toMs: Long,
+        grain: BucketGrain,
+        waitressId: Long?,
+    ): List<ChartPoint> = withContext(Dispatchers.IO) {
+        val orders = orderDao.listBetween(fromMs, toMs)
+            .filter { it.status != OrderStatus.ANNULEE.storageKey }
+            .filter { waitressId == null || it.waitressId == waitressId }
+
+        // Évite des milliers de buckets vides pour "Tout" (from=0).
+        val effectiveFrom = if (fromMs <= 1_000L) {
+            orders.minOfOrNull { it.createdAt } ?: System.currentTimeMillis()
+        } else {
+            fromMs
+        }
+        val buckets = buildBuckets(effectiveFrom, toMs.coerceAtMost(System.currentTimeMillis() + 86_400_000L), grain)
+        if (buckets.isEmpty()) return@withContext emptyList()
+
+        val totals = LinkedHashMap<Long, Pair<Long, Long>>()
+        buckets.forEach { (start, _) -> totals[start] = 0L to 0L }
+
+        orders.forEach { order ->
+            val key = bucketStart(order.createdAt, grain)
+            val prev = totals[key] ?: return@forEach
+            totals[key] = (prev.first + order.totalAmount) to (prev.second + order.paidAmount)
+        }
+
+        buckets.map { (start, label) ->
+            val (gen, col) = totals[start] ?: (0L to 0L)
+            ChartPoint(
+                label = label,
+                value = gen.toFloat(),
+                secondaryValue = col.toFloat(),
+                bucketStartMs = start,
+            )
+        }
+    }
+
+    private fun buildBuckets(
+        fromMs: Long,
+        toMs: Long,
+        grain: BucketGrain,
+    ): List<Pair<Long, String>> {
+        val cal = Calendar.getInstance().apply { timeInMillis = fromMs }
+        alignCalendar(cal, grain)
+        val end = toMs
+        val hourFmt = SimpleDateFormat("HH'h'", Locale.FRANCE)
+        val dayFmt = SimpleDateFormat("dd/MM", Locale.FRANCE)
+        val weekFmt = SimpleDateFormat("'S'w dd/MM", Locale.FRANCE)
+        val monthFmt = SimpleDateFormat("MMM yy", Locale.FRANCE)
+        val out = ArrayList<Pair<Long, String>>(64)
+        var guard = 0
+        while (cal.timeInMillis <= end && guard < 400) {
+            val start = cal.timeInMillis
+            val label = when (grain) {
+                BucketGrain.HOUR -> hourFmt.format(start)
+                BucketGrain.DAY -> dayFmt.format(start)
+                BucketGrain.WEEK -> weekFmt.format(start)
+                BucketGrain.MONTH -> monthFmt.format(start)
+            }
+            out += start to label
+            when (grain) {
+                BucketGrain.HOUR -> cal.add(Calendar.HOUR_OF_DAY, 1)
+                BucketGrain.DAY -> cal.add(Calendar.DAY_OF_YEAR, 1)
+                BucketGrain.WEEK -> cal.add(Calendar.WEEK_OF_YEAR, 1)
+                BucketGrain.MONTH -> cal.add(Calendar.MONTH, 1)
+            }
+            guard++
+        }
+        return out
+    }
+
+    private fun alignCalendar(cal: Calendar, grain: BucketGrain) {
+        when (grain) {
+            BucketGrain.HOUR -> {
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+            }
+            BucketGrain.DAY -> {
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+            }
+            BucketGrain.WEEK -> {
+                cal.firstDayOfWeek = Calendar.MONDAY
+                cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+            }
+            BucketGrain.MONTH -> {
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+            }
+        }
+    }
+
+    private fun bucketStart(epochMs: Long, grain: BucketGrain): Long {
+        val cal = Calendar.getInstance().apply { timeInMillis = epochMs }
+        alignCalendar(cal, grain)
+        return cal.timeInMillis
+    }
 
     private fun OrderEntity.toSummary() = Order(
         id = id,

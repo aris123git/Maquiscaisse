@@ -11,4 +11,18 @@ object MoneyFormat {
 
     fun format(amount: Long): String =
         "${numberFormat.format(amount)} ${Constants.CURRENCY_LABEL}"
+
+    // Normalise les espaces non-breakable et fullwidth digits avant envoi vers les imprimantes.
+    fun forPrinter(amount: Long): String {
+        val raw = numberFormat.format(amount)
+        // NBSP -> ASCII space
+        val normalized = raw.replace('\u00A0', ' ')
+            // fullwidth digits -> ASCII
+            .map { c ->
+                if (c in '\uFF10'..'\uFF19') {
+                    ('0' + (c - '\uFF10')).toChar()
+                } else c
+            }.joinToString("")
+        return "$normalized ${Constants.CURRENCY_LABEL}"
+    }
 }

@@ -212,16 +212,22 @@ class OrderDetailViewModel @Inject constructor(
     fun printTicket() {
         val order = _ui.value.order ?: return
         viewModelScope.launch {
-            if (!printer.isEnabled()) {
-                _ui.update { it.copy(message = "Impression désactivée") }
-                return@launch
-            }
-            val result = printer.printOrder(order)
-            _ui.update {
-                it.copy(
-                    message = if (result.isSuccess) "Ticket imprimé" else result.exceptionOrNull()?.message,
-                    error = if (result.isFailure) result.exceptionOrNull()?.message else null,
-                )
+            // lock UI while printing to prevent duplicate clicks
+            _ui.update { it.copy(isBusy = true, message = null, error = null) }
+            try {
+                if (!printer.isEnabled()) {
+                    _ui.update { it.copy(message = "Impression désactivée") }
+                    return@launch
+                }
+                val result = printer.printOrder(order)
+                _ui.update {
+                    it.copy(
+                        message = if (result.isSuccess) "Ticket imprimé" else result.exceptionOrNull()?.message,
+                        error = if (result.isFailure) result.exceptionOrNull()?.message else null,
+                    )
+                }
+            } finally {
+                _ui.update { it.copy(isBusy = false) }
             }
         }
     }

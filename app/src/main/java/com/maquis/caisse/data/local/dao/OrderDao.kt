@@ -8,6 +8,7 @@ import androidx.room.Update
 import com.maquis.caisse.data.local.entity.OrderEntity
 import com.maquis.caisse.data.local.entity.OrderItemEntity
 import com.maquis.caisse.data.local.entity.OrderPaymentEntity
+import com.maquis.caisse.data.local.model.PaymentModeTotal
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -41,6 +42,17 @@ interface OrderDao {
 
     @Query("SELECT * FROM order_payments WHERE order_id = :orderId ORDER BY created_at ASC")
     suspend fun getPayments(orderId: Long): List<OrderPaymentEntity>
+
+    /** Ventilation des encaissements par mode de paiement sur une période donnée. */
+    @Query("""
+        SELECT p.payment_mode AS paymentMode, COALESCE(SUM(p.amount), 0) AS total
+        FROM order_payments p
+        JOIN orders o ON p.order_id = o.id
+        WHERE o.status = 'PAYEE'
+          AND o.updated_at BETWEEN :fromMs AND :toMs
+        GROUP BY p.payment_mode
+    """)
+    suspend fun paymentModeBreakdown(fromMs: Long, toMs: Long): List<PaymentModeTotal>
 
     @Query(
         """

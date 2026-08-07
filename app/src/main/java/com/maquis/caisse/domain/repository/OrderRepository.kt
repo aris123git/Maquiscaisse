@@ -37,4 +37,5 @@ interface OrderRepository {
     suspend fun categorySales(fromMs: Long, toMs: Long, waitressId: Long?): List<CategorySalesRow>
     suspend fun productSales(fromMs: Long, toMs: Long, waitressId: Long?): List<ProductSalesRow>
     suspend fun dashboard(fromMs: Long, toMs: Long): DashboardStats
+    suspend fun bilanJour(fromMs: Long, toMs: Long): Map<String, Long>
 }

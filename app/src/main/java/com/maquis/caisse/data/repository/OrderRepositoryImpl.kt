@@ -494,6 +494,12 @@ class OrderRepositoryImpl @Inject constructor(
             )
         }
 
+    override suspend fun bilanJour(fromMs: Long, toMs: Long): Map<String, Long> =
+        withContext(Dispatchers.IO) {
+            orderDao.paymentModeBreakdown(fromMs, toMs)
+                .associate { it.paymentMode to it.total }
+        }
+
     private fun OrderEntity.toSummary() = Order(
         id = id,
         publicId = publicId,

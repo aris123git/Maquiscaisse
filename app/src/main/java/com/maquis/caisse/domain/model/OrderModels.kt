@@ -100,3 +100,17 @@ data class DashboardStats(
     val topCategories: List<CategorySalesRow>,
     val waitressStats: List<WaitressStats>,
 )
+
+/** Bilan financier du jour ventilé par mode de paiement + dettes + avoirs. */
+data class BilanJourStats(
+    val cashSales: Long = 0L,
+    val mobileSales: Long = 0L,
+    val debtSales: Long = 0L,
+    val otherSales: Long = 0L,
+    val dettesOuvertesCount: Int = 0,
+    val dettesOuvertesTotal: Long = 0L,
+    val avoirsTotal: Long = 0L,
+) {
+    /** Encaissement réel net = espèces + mobile + autre − avoirs. Dettes exclues car non encaissées. */
+    val netCollected: Long get() = (cashSales + mobileSales + otherSales - avoirsTotal).coerceAtLeast(0L)
+}

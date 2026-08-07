@@ -139,7 +139,11 @@ fun CaisseSessionScreen(viewModel: CaisseSessionViewModel = hiltViewModel()) {
                     )
                 }
                 items(closedSessions) { session ->
-                    ClosedSessionCard(session = session, df = df)
+                    ClosedSessionCard(
+                        session = session,
+                        df = df,
+                        onPrint = { viewModel.printSessionClosure(session) },
+                    )
                     HorizontalDivider()
                 }
             }
@@ -277,7 +281,11 @@ private fun OpenSessionCard(
 // ── Closed session card ───────────────────────────────────────────────────────
 
 @Composable
-private fun ClosedSessionCard(session: CaisseSession, df: SimpleDateFormat) {
+private fun ClosedSessionCard(
+    session: CaisseSession,
+    df: SimpleDateFormat,
+    onPrint: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -376,6 +384,18 @@ private fun ClosedSessionCard(session: CaisseSession, df: SimpleDateFormat) {
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
+            }
+        }
+        if (session.cashCounted != null) {
+            Button(
+                onClick = onPrint,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                ),
+            ) {
+                Text("Réimprimer la clôture")
             }
         }
     }

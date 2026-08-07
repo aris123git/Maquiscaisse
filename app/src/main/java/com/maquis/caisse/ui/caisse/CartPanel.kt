@@ -42,6 +42,7 @@ fun CartPanel(
     modifier: Modifier = Modifier,
     onClear: (() -> Unit)? = null,
     onSaveOrder: (() -> Unit)? = null,
+    onReprint: (() -> Unit)? = null,
 ) {
     Surface(
         shape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp),
@@ -174,6 +175,22 @@ fun CartPanel(
                     .heightIn(min = 48.dp),
             ) {
                 Text("Encaisser", style = MaterialTheme.typography.titleMedium)
+            }
+
+            if (onReprint != null && lines.isEmpty()) {
+                OutlinedButton(
+                    onClick = onReprint,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .padding(top = 6.dp),
+                ) {
+                    Text(
+                        "🖨  Réimprimer le dernier ticket",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
     }

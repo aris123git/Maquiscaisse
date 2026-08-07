@@ -473,6 +473,31 @@ class CaisseViewModel @Inject constructor(
         _uiState.update { it.copy(completedSale = null, completedOrder = null) }
     }
 
+    /** Réimprime le dernier ticket sans relancer la vente. */
+    fun printLastOrder() {
+        val order = _uiState.value.completedOrder ?: return
+        viewModelScope.launch {
+            if (!printer.isEnabled()) {
+                _uiState.update { it.copy(snackbarMessage = "Impression désactivée") }
+                return@launch
+            }
+            try {
+                val result = printer.printOrder(order)
+                _uiState.update {
+                    it.copy(
+                        snackbarMessage = if (result.isSuccess) {
+                            "Ticket réimprimé"
+                        } else {
+                            "⚠ Réimpression : ${result.exceptionOrNull()?.message ?: "échec"}"
+                        },
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(snackbarMessage = "⚠ Réimpression : ${e.message ?: "erreur inattendue"}") }
+            }
+        }
+    }
+
     fun clearCart() {
         setCart(emptyList())
     }

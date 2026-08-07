@@ -160,6 +160,7 @@ fun CaisseScreen(
                 onSaveOrder = {
                     viewModel.saveUnpaidOrder(onCreated = onOrderCreated)
                 },
+                onReprint = if (state.completedOrder != null) viewModel::printLastOrder else null,
                 modifier = Modifier
                     .weight(0.72f)
                     .fillMaxHeight()

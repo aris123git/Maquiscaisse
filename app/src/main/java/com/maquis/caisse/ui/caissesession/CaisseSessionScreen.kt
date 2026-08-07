@@ -22,9 +22,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,8 +48,10 @@ import com.maquis.caisse.data.print.EscPosPrinter
 import com.maquis.caisse.domain.model.CaisseSession
 import com.maquis.caisse.domain.repository.CaisseSessionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -64,13 +70,27 @@ class CaisseSessionViewModel @Inject constructor(
         .observeRecent()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    private val _printMessage = MutableStateFlow<String?>(null)
+    val printMessage: StateFlow<String?> = _printMessage.asStateFlow()
+
     fun updateCashCounted(amount: Long) = viewModelScope.launch {
         sessionRepository.updateCashCounted(amount)
     }
 
     fun printSessionClosure(session: CaisseSession) = viewModelScope.launch {
-        printer.printSessionClosure(session)
+        try {
+            val result = printer.printSessionClosure(session)
+            _printMessage.value = if (result.isSuccess) {
+                "Ticket de clôture imprimé"
+            } else {
+                "⚠ Impression : ${result.exceptionOrNull()?.message ?: "échec"}"
+            }
+        } catch (e: Exception) {
+            _printMessage.value = "⚠ Impression : ${e.message ?: "erreur inattendue"}"
+        }
     }
+
+    fun consumePrintMessage() { _printMessage.value = null }
 }
 
 // ── Screen ───────────────────────────────────────────────────────────────────
@@ -78,12 +98,20 @@ class CaisseSessionViewModel @Inject constructor(
 @Composable
 fun CaisseSessionScreen(viewModel: CaisseSessionViewModel = hiltViewModel()) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
+    val printMessage by viewModel.printMessage.collectAsStateWithLifecycle()
     val df = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val openSession = sessions.firstOrNull { it.isOpen }
     val closedSessions = sessions.filter { !it.isOpen }
 
     var showComptageDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(printMessage) {
+        val msg = printMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(msg)
+        viewModel.consumePrintMessage()
+    }
 
     if (showComptageDialog) {
         ComptageDialog(
@@ -96,7 +124,9 @@ fun CaisseSessionScreen(viewModel: CaisseSessionViewModel = hiltViewModel()) {
         )
     }
 
-    Scaffold { padding ->
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()

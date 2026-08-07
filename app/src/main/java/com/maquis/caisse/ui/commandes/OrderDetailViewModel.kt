@@ -220,9 +220,11 @@ class OrderDetailViewModel @Inject constructor(
                 _ui.update {
                     it.copy(
                         message = if (result.isSuccess) "Ticket imprimé" else result.exceptionOrNull()?.message,
-                        error = if (result.isFailure) result.exceptionOrNull()?.message else null,
+                        error = if (result.isFailure) result.exceptionOrNull()?.message ?: "Échec impression" else null,
                     )
                 }
+            } catch (e: Exception) {
+                _ui.update { it.copy(error = e.message ?: "Échec impression inattendu") }
             } finally {
                 _ui.update { it.copy(isBusy = false) }
             }

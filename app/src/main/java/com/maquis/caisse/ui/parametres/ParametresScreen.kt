@@ -358,15 +358,19 @@ class ParametresViewModel @Inject constructor(
             _ui.update { it.copy(message = "Impression désactivée — aucun envoi") }
             return@launch
         }
-        val result = printer.testPrint()
-        _ui.update {
-            it.copy(
-                message = if (result.isSuccess) {
-                    "Test imprimé"
-                } else {
-                    result.exceptionOrNull()?.message ?: "Échec impression"
-                },
-            )
+        try {
+            val result = printer.testPrint()
+            _ui.update {
+                it.copy(
+                    message = if (result.isSuccess) {
+                        "Test imprimé"
+                    } else {
+                        result.exceptionOrNull()?.message ?: "Échec impression"
+                    },
+                )
+            }
+        } catch (e: Exception) {
+            _ui.update { it.copy(message = e.message ?: "Échec impression inattendu") }
         }
     }
 }

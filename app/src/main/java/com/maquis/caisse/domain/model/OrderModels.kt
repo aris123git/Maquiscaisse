@@ -90,6 +90,27 @@ data class ProductSalesRow(
     val revenue: Long,
 )
 
+/**
+ * Résumé financier du jour affiché dans la carte "Caisse du jour".
+ *
+ * @param cashToday        Total espèces encaissées sur la période.
+ * @param mobileToday      Total mobile money encaissé sur la période.
+ * @param debtToday        Montant de dettes créées sur la période.
+ * @param avoirToday       Montant d'avoirs émis sur la période.
+ * @param fondDeCaisse     Fond de caisse à l'ouverture de la session (null si pas de session ouverte).
+ * @param espècesThéoriques fondDeCaisse + espèces depuis l'ouverture de session (null si pas de session).
+ * @param écart            cashCounted − espècesThéoriques ; null si espèces pas encore comptées.
+ */
+data class CaisseDuJour(
+    val cashToday: Long,
+    val mobileToday: Long,
+    val debtToday: Long,
+    val avoirToday: Long,
+    val fondDeCaisse: Long? = null,
+    val espècesThéoriques: Long? = null,
+    val écart: Long? = null,
+)
+
 data class DashboardStats(
     val ordersToday: Int,
     val openOrders: Int,
@@ -99,6 +120,7 @@ data class DashboardStats(
     val topProducts: List<ProductSalesRow>,
     val topCategories: List<CategorySalesRow>,
     val waitressStats: List<WaitressStats>,
+    val caisseDuJour: CaisseDuJour,
 )
 
 /** Bilan financier du jour ventilé par mode de paiement + dettes + avoirs. */

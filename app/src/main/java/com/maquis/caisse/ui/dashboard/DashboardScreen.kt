@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,12 +41,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.common.MoneyFormat
-import com.maquis.caisse.domain.model.BilanJourStats
+import com.maquis.caisse.domain.model.CaisseDuJour
 import com.maquis.caisse.domain.model.WaitressStats
 import com.maquis.caisse.ui.common.GlassCard
 import com.maquis.caisse.ui.common.PageHeader
 import com.maquis.caisse.ui.theme.GestionBlue
 import com.maquis.caisse.ui.theme.GestionCyan
+import com.maquis.caisse.ui.theme.GestionDanger
 import com.maquis.caisse.ui.theme.GestionSuccess
 import com.maquis.caisse.ui.theme.GestionWarning
 
@@ -61,7 +63,6 @@ private val ChartPalette = listOf(
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
     val stats by viewModel.stats.collectAsStateWithLifecycle()
-    val bilan by viewModel.bilan.collectAsStateWithLifecycle()
     var selectedWaitressId by remember { mutableStateOf<Long?>(null) }
 
     Column(
@@ -83,6 +84,8 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
             Text("Chargement…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             return
         }
+
+        CaisseDuJourCard(s.caisseDuJour)
 
         GlassCard {
             Text("Ventes par serveuse", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -144,9 +147,6 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
                 }
             }
         }
-
-        // ── Bilan caisse du jour ──────────────────────────────────────────
-        bilan?.let { b -> BilanJourCard(b) }
 
         Text(
             "Chiffres du jour",
@@ -219,71 +219,100 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun BilanJourCard(b: BilanJourStats) {
+private fun CaisseDuJourCard(c: CaisseDuJour) {
     GlassCard {
-        Text("Bilan caisse du jour", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(10.dp))
+        Text(
+            "Caisse du jour",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = GestionBlue,
+        )
+        Spacer(Modifier.height(4.dp))
 
-        // Encaissements
-        if (b.cashSales > 0 || b.mobileSales > 0 || b.otherSales > 0 || b.debtSales > 0) {
+        CaisseDetailLine("Espèces encaissées", MoneyFormat.format(c.cashToday), GestionSuccess)
+        CaisseDetailLine("Mobile money", MoneyFormat.format(c.mobileToday), GestionCyan)
+        CaisseDetailLine("Dettes créées", MoneyFormat.format(c.debtToday), GestionWarning)
+        CaisseDetailLine("Avoirs émis", MoneyFormat.format(c.avoirToday), GestionWarning)
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+        val netTotal = c.cashToday + c.mobileToday
+        CaisseDetailLine(
+            "Total net encaissé",
+            MoneyFormat.format(netTotal),
+            GestionBlue,
+            bold = true,
+        )
+
+        if (c.fondDeCaisse != null && c.espècesThéoriques != null) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             Text(
-                "Encaissements",
-                style = MaterialTheme.typography.labelMedium,
+                "Session ouverte",
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(4.dp))
-            if (b.cashSales > 0)
-                DetailLine("Espèces", MoneyFormat.format(b.cashSales))
-            if (b.mobileSales > 0)
-                DetailLine("Mobile / Carte", MoneyFormat.format(b.mobileSales))
-            if (b.otherSales > 0)
-                DetailLine("Autre", MoneyFormat.format(b.otherSales))
-            if (b.debtSales > 0)
-                DetailLine("Dettes enregistrées", MoneyFormat.format(b.debtSales), color = MaterialTheme.colorScheme.error)
-        }
-
-        // Avoirs du jour
-        if (b.avoirsTotal > 0) {
-            Spacer(Modifier.height(6.dp))
-            DetailLine("Avoirs / remboursements", "− ${MoneyFormat.format(b.avoirsTotal)}", color = Color(0xFFF57C00))
-        }
-
-        // Net
-        Spacer(Modifier.height(6.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(GestionSuccess.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text("Net encaissé", fontWeight = FontWeight.SemiBold)
-            Text(MoneyFormat.format(b.netCollected), fontWeight = FontWeight.Bold, color = GestionSuccess)
-        }
-
-        // Dettes en cours
-        if (b.dettesOuvertesCount > 0) {
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(10.dp))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    "${b.dettesOuvertesCount} dette(s) en cours",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
+            CaisseDetailLine("Fond de caisse", MoneyFormat.format(c.fondDeCaisse), GestionBlue)
+            CaisseDetailLine(
+                "Espèces théoriques",
+                MoneyFormat.format(c.espècesThéoriques),
+                GestionSuccess,
+            )
+            if (c.écart != null) {
+                val écartColor = when {
+                    c.écart > 0L -> GestionSuccess
+                    c.écart < 0L -> GestionDanger
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+                val écartPrefix = if (c.écart > 0L) "+" else ""
+                CaisseDetailLine(
+                    "Écart caisse",
+                    "$écartPrefix${MoneyFormat.format(c.écart)}",
+                    écartColor,
+                    bold = true,
                 )
-                Text(
-                    MoneyFormat.format(b.dettesOuvertesTotal),
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+            } else {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Espèces comptées",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "— non saisi",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun CaisseDetailLine(
+    label: String,
+    value: String,
+    valueColor: Color,
+    bold: Boolean = false,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            value,
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.SemiBold,
+            color = valueColor,
+        )
     }
 }
 

@@ -107,6 +107,24 @@ interface OrderDao {
         toMs: Long,
     ): Flow<List<OrderEntity>>
 
+    /** Somme des paiements d'un mode donné dont le timestamp tombe dans [from, to]. */
+    @Query(
+        """
+        SELECT COALESCE(SUM(amount), 0) FROM order_payments
+        WHERE payment_mode = :mode AND created_at BETWEEN :from AND :to
+        """,
+    )
+    suspend fun totalPaymentsByMode(mode: String, from: Long, to: Long): Long
+
+    /** Somme des paiements de plusieurs modes dont le timestamp tombe dans [from, to]. */
+    @Query(
+        """
+        SELECT COALESCE(SUM(amount), 0) FROM order_payments
+        WHERE payment_mode IN (:modes) AND created_at BETWEEN :from AND :to
+        """,
+    )
+    suspend fun totalPaymentsByModes(modes: List<String>, from: Long, to: Long): Long
+
     @Transaction
     suspend fun replaceItems(orderId: Long, items: List<OrderItemEntity>) {
         deleteItems(orderId)

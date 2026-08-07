@@ -37,4 +37,8 @@ interface DetteDao {
 
     @Query("SELECT COALESCE(SUM(amount),0) FROM dettes WHERE status != 'SETTLED'")
     suspend fun totalEnCours(): Long
+
+    /** Somme des dettes créées dans la fenêtre [from, to]. */
+    @Query("SELECT COALESCE(SUM(original_amount), 0) FROM dettes WHERE created_at BETWEEN :from AND :to")
+    suspend fun totalCreatedBetween(from: Long, to: Long): Long
 }

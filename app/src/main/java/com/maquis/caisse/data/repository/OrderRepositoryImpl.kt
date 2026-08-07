@@ -13,6 +13,7 @@ import com.maquis.caisse.data.local.entity.OrderEntity
 import com.maquis.caisse.data.local.entity.OrderItemEntity
 import com.maquis.caisse.data.local.entity.OrderPaymentEntity
 import com.maquis.caisse.data.local.entity.StockMovementEntity
+import com.maquis.caisse.domain.model.CaisseDuJour
 import com.maquis.caisse.domain.model.CategorySalesRow
 import com.maquis.caisse.domain.model.CreateOrderRequest
 import com.maquis.caisse.domain.model.DashboardStats
@@ -482,6 +483,34 @@ class OrderRepositoryImpl @Inject constructor(
             }
             val generated = orders.sumOf { it.totalAmount }
             val collected = orders.sumOf { it.paidAmount }
+
+            // Ventilation paiements du jour par mode
+            val cashToday = orderDao.totalPaymentsByMode("CASH", fromMs, toMs)
+            val mobileModes = listOf(
+                "ORANGE_MONEY", "MOOV_MONEY", "WAVE", "CARD", "OTHER",
+                "MOBILE_MONEY", "VOUCHER", "TRANSFER",
+            )
+            val mobileToday = orderDao.totalPaymentsByModes(mobileModes, fromMs, toMs)
+            val debtToday = detteDao.totalCreatedBetween(fromMs, toMs)
+            val avoirToday = db.avoirDao().totalBetween(fromMs, toMs)
+
+            // Écart fond de caisse si une session est ouverte
+            val openSession = db.caisseSessionDao().getOpenSession()
+            val fondDeCaisse: Long?
+            val espècesThéoriques: Long?
+            val écart: Long?
+            if (openSession != null) {
+                val now = toMs
+                val cashSinceOpen = orderDao.totalPaymentsByMode("CASH", openSession.openedAt, now)
+                fondDeCaisse = openSession.openingBalance
+                espècesThéoriques = fondDeCaisse + cashSinceOpen
+                écart = openSession.cashCounted?.let { counted -> counted - espècesThéoriques }
+            } else {
+                fondDeCaisse = null
+                espècesThéoriques = null
+                écart = null
+            }
+
             DashboardStats(
                 ordersToday = orders.size,
                 openOrders = open,
@@ -491,6 +520,15 @@ class OrderRepositoryImpl @Inject constructor(
                 topProducts = productSales(fromMs, toMs, null).take(5),
                 topCategories = categorySales(fromMs, toMs, null).take(5),
                 waitressStats = waitressStats(fromMs, toMs, null),
+                caisseDuJour = CaisseDuJour(
+                    cashToday = cashToday,
+                    mobileToday = mobileToday,
+                    debtToday = debtToday,
+                    avoirToday = avoirToday,
+                    fondDeCaisse = fondDeCaisse,
+                    espècesThéoriques = espècesThéoriques,
+                    écart = écart,
+                ),
             )
         }
 

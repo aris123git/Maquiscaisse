@@ -15,49 +15,28 @@ interface CaisseSessionDao {
     @Query("SELECT * FROM caisse_sessions WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1")
     suspend fun getOpenSession(): CaisseSessionEntity?
 
-    /**
-     * Ferme la session et calcule la ventilation depuis order_payments.
-     * Toutes les ventes passent par la table orders / order_payments.
-     */
+    /** Ferme la session avec les totaux pré-calculés côté repository. */
     @Query("""
         UPDATE caisse_sessions
         SET closed_at    = :closedAt,
             cash_counted = :cashCounted,
-            sales_count  = (
-                SELECT COUNT(DISTINCT o.id) FROM orders o
-                WHERE o.status = 'PAYEE'
-                  AND o.updated_at >= opened_at AND o.updated_at <= :closedAt
-            ),
-            total_amount = (
-                SELECT COALESCE(SUM(p.amount), 0) FROM order_payments p
-                JOIN orders o ON p.order_id = o.id
-                WHERE o.status = 'PAYEE'
-                  AND o.updated_at >= opened_at AND o.updated_at <= :closedAt
-            ),
-            cash_sales   = (
-                SELECT COALESCE(SUM(p.amount), 0) FROM order_payments p
-                JOIN orders o ON p.order_id = o.id
-                WHERE o.status = 'PAYEE'
-                  AND o.updated_at >= opened_at AND o.updated_at <= :closedAt
-                  AND p.payment_mode = 'CASH'
-            ),
-            mobile_sales = (
-                SELECT COALESCE(SUM(p.amount), 0) FROM order_payments p
-                JOIN orders o ON p.order_id = o.id
-                WHERE o.status = 'PAYEE'
-                  AND o.updated_at >= opened_at AND o.updated_at <= :closedAt
-                  AND p.payment_mode IN ('ORANGE_MONEY','MOOV_MONEY','WAVE','CARD','OTHER','MOBILE_MONEY','VOUCHER','TRANSFER')
-            ),
-            debt_sales   = (
-                SELECT COALESCE(SUM(p.amount), 0) FROM order_payments p
-                JOIN orders o ON p.order_id = o.id
-                WHERE o.status = 'PAYEE'
-                  AND o.updated_at >= opened_at AND o.updated_at <= :closedAt
-                  AND p.payment_mode = 'DEBT'
-            )
+            sales_count  = :salesCount,
+            total_amount = :totalAmount,
+            cash_sales   = :cashSales,
+            mobile_sales = :mobileSales,
+            debt_sales   = :debtSales
         WHERE id = :sessionId
     """)
-    suspend fun closeSession(sessionId: Long, closedAt: Long, cashCounted: Long?)
+    suspend fun closeSession(
+        sessionId: Long,
+        closedAt: Long,
+        cashCounted: Long?,
+        salesCount: Int,
+        totalAmount: Long,
+        cashSales: Long,
+        mobileSales: Long,
+        debtSales: Long,
+    )
 
     /** Met à jour uniquement le comptage espèces sans fermer la session. */
     @Query("UPDATE caisse_sessions SET cash_counted = :cashCounted WHERE id = :sessionId")

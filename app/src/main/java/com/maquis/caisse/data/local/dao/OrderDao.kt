@@ -43,6 +43,13 @@ interface OrderDao {
     @Query("SELECT * FROM order_payments WHERE order_id = :orderId ORDER BY created_at ASC")
     suspend fun getPayments(orderId: Long): List<OrderPaymentEntity>
 
+    /** Nombre de commandes PAYEE dont le paiement tombe dans la période. */
+    @Query("""
+        SELECT COUNT(DISTINCT id) FROM orders
+        WHERE status = 'PAYEE' AND updated_at BETWEEN :fromMs AND :toMs
+    """)
+    suspend fun countPaidBetween(fromMs: Long, toMs: Long): Int
+
     /** Ventilation des encaissements par mode de paiement sur une période donnée. */
     @Query("""
         SELECT p.payment_mode AS paymentMode, COALESCE(SUM(p.amount), 0) AS total

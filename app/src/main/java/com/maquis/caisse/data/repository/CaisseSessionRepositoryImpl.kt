@@ -1,6 +1,7 @@
 package com.maquis.caisse.data.repository
 
 import com.maquis.caisse.data.local.dao.CaisseSessionDao
+import com.maquis.caisse.data.local.dao.OrderDao
 import com.maquis.caisse.data.local.entity.CaisseSessionEntity
 import com.maquis.caisse.domain.model.AppUser
 import com.maquis.caisse.domain.model.CaisseSession
@@ -10,9 +11,15 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private val MOBILE_KEYS = setOf(
+    "ORANGE_MONEY", "MOOV_MONEY", "WAVE", "CARD",
+    "MOBILE_MONEY", "VOUCHER", "TRANSFER",
+)
+
 @Singleton
 class CaisseSessionRepositoryImpl @Inject constructor(
     private val dao: CaisseSessionDao,
+    private val orderDao: OrderDao,
 ) : CaisseSessionRepository {
 
     override suspend fun openSession(user: AppUser, openingBalance: Long): Long {
@@ -27,7 +34,30 @@ class CaisseSessionRepositoryImpl @Inject constructor(
 
     override suspend fun closeCurrentSession(cashCounted: Long?) {
         val open = dao.getOpenSession() ?: return
-        dao.closeSession(open.id, System.currentTimeMillis(), cashCounted)
+        val now = System.currentTimeMillis()
+
+        // Calcul des totaux en Kotlin depuis order_payments (évite les subqueries corélées dans Room)
+        val payments = orderDao.paymentModeBreakdown(open.openedAt, now)
+        val breakdown = payments.associate { it.paymentMode to it.total }
+
+        val totalAmount = breakdown.values.sum()
+        val cashSales   = breakdown["CASH"] ?: 0L
+        val mobileSales = MOBILE_KEYS.sumOf { breakdown[it] ?: 0L }
+        val debtSales   = breakdown["DEBT"] ?: 0L
+
+        // Nombre de commandes PAYEE pendant la session
+        val salesCount = orderDao.countPaidBetween(open.openedAt, now)
+
+        dao.closeSession(
+            sessionId   = open.id,
+            closedAt    = now,
+            cashCounted = cashCounted,
+            salesCount  = salesCount,
+            totalAmount = totalAmount,
+            cashSales   = cashSales,
+            mobileSales = mobileSales,
+            debtSales   = debtSales,
+        )
     }
 
     override suspend fun updateCashCounted(cashCounted: Long) {
@@ -42,17 +72,17 @@ class CaisseSessionRepositoryImpl @Inject constructor(
         dao.observeRecent().map { list -> list.map { it.toDomain() } }
 
     private fun CaisseSessionEntity.toDomain() = CaisseSession(
-        id = id,
-        userId = userId,
-        userName = userName,
-        openedAt = openedAt,
-        closedAt = closedAt,
+        id             = id,
+        userId         = userId,
+        userName       = userName,
+        openedAt       = openedAt,
+        closedAt       = closedAt,
         openingBalance = openingBalance,
-        salesCount = salesCount,
-        totalAmount = totalAmount,
-        cashSales = cashSales,
-        mobileSales = mobileSales,
-        debtSales = debtSales,
-        cashCounted = cashCounted,
+        salesCount     = salesCount,
+        totalAmount    = totalAmount,
+        cashSales      = cashSales,
+        mobileSales    = mobileSales,
+        debtSales      = debtSales,
+        cashCounted    = cashCounted,
     )
 }

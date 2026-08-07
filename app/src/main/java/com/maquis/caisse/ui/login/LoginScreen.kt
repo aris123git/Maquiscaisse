@@ -22,12 +22,14 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -77,7 +79,7 @@ class LoginViewModel @Inject constructor(
         _error.value = null
     }
 
-    fun login(name: String, pin: String, onSuccess: () -> Unit) {
+    fun login(name: String, pin: String, openingBalance: Long = 0L, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _error.value = null
             if (name.isBlank() || pin.length < 4) {
@@ -90,7 +92,7 @@ class LoginViewModel @Inject constructor(
                 return@launch
             }
             session.setUser(user)
-            sessionRepository.openSession(user)
+            sessionRepository.openSession(user, openingBalance)
             onSuccess()
         }
     }
@@ -106,6 +108,49 @@ fun LoginScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     var selectedId by remember { mutableStateOf<Long?>(null) }
     var pin by remember { mutableStateOf("") }
+    var showFondDialog by remember { mutableStateOf(false) }
+    var fondInput by remember { mutableStateOf("") }
+
+    if (showFondDialog) {
+        AlertDialog(
+            onDismissRequest = { showFondDialog = false },
+            title = { Text("Fond de caisse") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Entrez le montant en espèces présent en caisse au départ (optionnel).",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    OutlinedTextField(
+                        value = fondInput,
+                        onValueChange = { fondInput = it.filter { c -> c.isDigit() } },
+                        label = { Text("Montant FCFA") },
+                        singleLine = true,
+                        suffix = { Text("FCFA") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFondDialog = false
+                        val fond = fondInput.toLongOrNull() ?: 0L
+                        val name = selectedId?.let { id -> users.firstOrNull { it.id == id }?.name }.orEmpty()
+                        viewModel.login(name, pin, fond, onLoggedIn)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GestionBlue),
+                ) { Text("Confirmer") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showFondDialog = false
+                    val name = selectedId?.let { id -> users.firstOrNull { it.id == id }?.name }.orEmpty()
+                    viewModel.login(name, pin, 0L, onLoggedIn)
+                }) { Text("Passer") }
+            },
+        )
+    }
 
     LaunchedEffect(users) {
         if (users.isEmpty()) {
@@ -213,8 +258,8 @@ fun LoginScreen(
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(
                         onClick = {
-                            val name = selectedUser?.name.orEmpty()
-                            viewModel.login(name, pin, onLoggedIn)
+                            fondInput = ""
+                            showFondDialog = true
                         },
                         enabled = selectedUser != null && pin.length >= 4,
                         colors = ButtonDefaults.buttonColors(containerColor = GestionBlue),

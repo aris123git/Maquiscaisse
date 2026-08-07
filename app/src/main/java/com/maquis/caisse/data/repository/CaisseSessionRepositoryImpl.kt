@@ -15,18 +15,24 @@ class CaisseSessionRepositoryImpl @Inject constructor(
     private val dao: CaisseSessionDao,
 ) : CaisseSessionRepository {
 
-    override suspend fun openSession(user: AppUser): Long {
+    override suspend fun openSession(user: AppUser, openingBalance: Long): Long {
         val entity = CaisseSessionEntity(
             userId = user.id,
             userName = user.name,
             openedAt = System.currentTimeMillis(),
+            openingBalance = openingBalance,
         )
         return dao.insert(entity)
     }
 
-    override suspend fun closeCurrentSession() {
+    override suspend fun closeCurrentSession(cashCounted: Long?) {
         val open = dao.getOpenSession() ?: return
-        dao.closeSession(open.id, System.currentTimeMillis())
+        dao.closeSession(open.id, System.currentTimeMillis(), cashCounted)
+    }
+
+    override suspend fun updateCashCounted(cashCounted: Long) {
+        val open = dao.getOpenSession() ?: return
+        dao.updateCashCounted(open.id, cashCounted)
     }
 
     override suspend fun getOpenSession(): CaisseSession? =
@@ -41,7 +47,12 @@ class CaisseSessionRepositoryImpl @Inject constructor(
         userName = userName,
         openedAt = openedAt,
         closedAt = closedAt,
+        openingBalance = openingBalance,
         salesCount = salesCount,
         totalAmount = totalAmount,
+        cashSales = cashSales,
+        mobileSales = mobileSales,
+        debtSales = debtSales,
+        cashCounted = cashCounted,
     )
 }

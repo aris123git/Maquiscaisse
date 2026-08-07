@@ -5,11 +5,14 @@ import com.maquis.caisse.domain.model.CaisseSession
 import kotlinx.coroutines.flow.Flow
 
 interface CaisseSessionRepository {
-    /** Ouvre une nouvelle session pour cet utilisateur. */
-    suspend fun openSession(user: AppUser): Long
+    /** Ouvre une nouvelle session pour cet utilisateur avec le fond de caisse initial. */
+    suspend fun openSession(user: AppUser, openingBalance: Long = 0L): Long
 
-    /** Ferme la session ouverte la plus récente (si elle existe). */
-    suspend fun closeCurrentSession()
+    /** Ferme la session ouverte en enregistrant le comptage espèces (null = non compté). */
+    suspend fun closeCurrentSession(cashCounted: Long? = null)
+
+    /** Met à jour uniquement le comptage espèces de la session en cours. */
+    suspend fun updateCashCounted(cashCounted: Long)
 
     /** Session actuellement ouverte, ou null. */
     suspend fun getOpenSession(): CaisseSession?

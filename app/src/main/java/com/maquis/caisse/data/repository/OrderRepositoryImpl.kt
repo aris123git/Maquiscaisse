@@ -3,10 +3,12 @@ package com.maquis.caisse.data.repository
 import androidx.room.withTransaction
 import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.data.local.AppDatabase
+import com.maquis.caisse.data.local.dao.DetteDao
 import com.maquis.caisse.data.local.dao.DiningTableDao
 import com.maquis.caisse.data.local.dao.OrderDao
 import com.maquis.caisse.data.local.dao.ProductDao
 import com.maquis.caisse.data.local.entity.AuditLogEntity
+import com.maquis.caisse.data.local.entity.DetteEntity
 import com.maquis.caisse.data.local.entity.OrderEntity
 import com.maquis.caisse.data.local.entity.OrderItemEntity
 import com.maquis.caisse.data.local.entity.OrderPaymentEntity
@@ -37,6 +39,7 @@ class OrderRepositoryImpl @Inject constructor(
     private val orderDao: OrderDao,
     private val productDao: ProductDao,
     private val tableDao: DiningTableDao,
+    private val detteDao: DetteDao,
     private val session: SessionManager,
 ) : OrderRepository {
 
@@ -380,6 +383,25 @@ class OrderRepositoryImpl @Inject constructor(
                     action = "MARK_PAID",
                     details = "${user.name} a marqué la commande ${existing.publicId} comme ${newStatus.label} (${mode.label} ${breakdown.totalAmount})",
                     createdAt = now,
+                ),
+            )
+        }
+        // Création automatique de la dette si mode = DEBT
+        if (mode == PaymentMode.DEBT) {
+            val debtAmount = breakdown.totalAmount
+            val orderEntity = existing
+            detteDao.insertDette(
+                DetteEntity(
+                    customerName = orderEntity.waitressName ?: "Client",
+                    orderId = orderId,
+                    orderPublicId = orderEntity.publicId,
+                    originalAmount = debtAmount,
+                    paidAmount = 0L,
+                    status = "OPEN",
+                    createdAt = now,
+                    userId = user.id,
+                    userName = user.name,
+                    note = "Commande ${orderEntity.publicId}",
                 ),
             )
         }

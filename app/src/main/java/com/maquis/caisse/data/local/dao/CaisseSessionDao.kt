@@ -12,38 +12,57 @@ interface CaisseSessionDao {
     @Insert
     suspend fun insert(session: CaisseSessionEntity): Long
 
-    /** Session encore ouverte (closed_at IS NULL), la plus récente. */
     @Query("SELECT * FROM caisse_sessions WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1")
     suspend fun getOpenSession(): CaisseSessionEntity?
 
-    /** Ferme la session et enregistre les totaux de la période.
-     *  Compte les commandes PAYEE dont la date de paiement (updated_at) tombe dans la session.
-     *  Toutes les ventes — directes ou via Commandes — passent par la table `orders`.
+    /**
+     * Ferme la session et calcule la ventilation depuis order_payments.
+     * Toutes les ventes passent par la table orders / order_payments.
      */
     @Query("""
         UPDATE caisse_sessions
         SET closed_at    = :closedAt,
+            cash_counted = :cashCounted,
             sales_count  = (
-                SELECT COUNT(*) FROM orders
-                WHERE status = 'PAYEE'
-                  AND updated_at >= opened_at
-                  AND updated_at <= :closedAt
+                SELECT COUNT(DISTINCT o.id) FROM orders o
+                WHERE o.status = 'PAYEE'
+                  AND o.updated_at >= opened_at AND o.updated_at <= :closedAt
             ),
             total_amount = (
-                SELECT COALESCE(SUM(paid_amount), 0) FROM orders
-                WHERE status = 'PAYEE'
-                  AND updated_at >= opened_at
-                  AND updated_at <= :closedAt
+                SELECT COALESCE(SUM(p.amount), 0) FROM order_payments p
+                JOIN orders o ON p.order_id = o.id
+                WHERE o.status = 'PAYEE'
+                  AND o.updated_at >= opened_at AND o.updated_at <= :closedAt
+            ),
+            cash_sales   = (
+                SELECT COALESCE(SUM(p.amount), 0) FROM order_payments p
+                JOIN orders o ON p.order_id = o.id
+                WHERE o.status = 'PAYEE'
+                  AND o.updated_at >= opened_at AND o.updated_at <= :closedAt
+                  AND p.payment_mode = 'CASH'
+            ),
+            mobile_sales = (
+                SELECT COALESCE(SUM(p.amount), 0) FROM order_payments p
+                JOIN orders o ON p.order_id = o.id
+                WHERE o.status = 'PAYEE'
+                  AND o.updated_at >= opened_at AND o.updated_at <= :closedAt
+                  AND p.payment_mode IN ('ORANGE_MONEY','MOOV_MONEY','WAVE','CARD','OTHER','MOBILE_MONEY','VOUCHER','TRANSFER')
+            ),
+            debt_sales   = (
+                SELECT COALESCE(SUM(p.amount), 0) FROM order_payments p
+                JOIN orders o ON p.order_id = o.id
+                WHERE o.status = 'PAYEE'
+                  AND o.updated_at >= opened_at AND o.updated_at <= :closedAt
+                  AND p.payment_mode = 'DEBT'
             )
         WHERE id = :sessionId
     """)
-    suspend fun closeSession(sessionId: Long, closedAt: Long)
+    suspend fun closeSession(sessionId: Long, closedAt: Long, cashCounted: Long?)
 
-    /** 30 dernières sessions pour l'historique. */
+    /** Met à jour uniquement le comptage espèces sans fermer la session. */
+    @Query("UPDATE caisse_sessions SET cash_counted = :cashCounted WHERE id = :sessionId")
+    suspend fun updateCashCounted(sessionId: Long, cashCounted: Long)
+
     @Query("SELECT * FROM caisse_sessions ORDER BY opened_at DESC LIMIT 30")
     fun observeRecent(): Flow<List<CaisseSessionEntity>>
-
-    /** Session du jour (ouverte après minuit aujourd'hui). */
-    @Query("SELECT * FROM caisse_sessions WHERE opened_at >= :startOfDay ORDER BY opened_at DESC")
-    fun observeToday(startOfDay: Long): Flow<List<CaisseSessionEntity>>
 }

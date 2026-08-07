@@ -3,8 +3,10 @@ package com.maquis.caisse.data.local
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.maquis.caisse.data.local.dao.AuditLogDao
+import com.maquis.caisse.data.local.dao.AvoirDao
 import com.maquis.caisse.data.local.dao.CaisseSessionDao
 import com.maquis.caisse.data.local.dao.CategoryDao
+import com.maquis.caisse.data.local.dao.DetteDao
 import com.maquis.caisse.data.local.dao.DiningTableDao
 import com.maquis.caisse.data.local.dao.OrderDao
 import com.maquis.caisse.data.local.dao.ProductDao
@@ -14,8 +16,11 @@ import com.maquis.caisse.data.local.dao.StockMovementDao
 import com.maquis.caisse.data.local.dao.UserDao
 import com.maquis.caisse.data.local.entity.AppSettingEntity
 import com.maquis.caisse.data.local.entity.AuditLogEntity
+import com.maquis.caisse.data.local.entity.AvoirEntity
 import com.maquis.caisse.data.local.entity.CaisseSessionEntity
 import com.maquis.caisse.data.local.entity.CategoryEntity
+import com.maquis.caisse.data.local.entity.DettePaiementEntity
+import com.maquis.caisse.data.local.entity.DetteEntity
 import com.maquis.caisse.data.local.entity.DiningTableEntity
 import com.maquis.caisse.data.local.entity.OrderEntity
 import com.maquis.caisse.data.local.entity.OrderItemEntity
@@ -41,8 +46,11 @@ import com.maquis.caisse.data.local.entity.UserEntity
         AuditLogEntity::class,
         AppSettingEntity::class,
         CaisseSessionEntity::class,
+        DetteEntity::class,
+        DettePaiementEntity::class,
+        AvoirEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -56,4 +64,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun auditLogDao(): AuditLogDao
     abstract fun settingsDao(): SettingsDao
     abstract fun caisseSessionDao(): CaisseSessionDao
+    abstract fun detteDao(): DetteDao
+    abstract fun avoirDao(): AvoirDao
 }

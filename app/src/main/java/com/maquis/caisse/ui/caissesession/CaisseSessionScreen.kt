@@ -40,6 +40,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.maquis.caisse.common.MoneyFormat
+import com.maquis.caisse.data.print.EscPosPrinter
 import com.maquis.caisse.domain.model.CaisseSession
 import com.maquis.caisse.domain.repository.CaisseSessionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -57,6 +58,7 @@ import javax.inject.Inject
 @HiltViewModel
 class CaisseSessionViewModel @Inject constructor(
     private val sessionRepository: CaisseSessionRepository,
+    private val printer: EscPosPrinter,
 ) : ViewModel() {
     val sessions: StateFlow<List<CaisseSession>> = sessionRepository
         .observeRecent()
@@ -64,6 +66,10 @@ class CaisseSessionViewModel @Inject constructor(
 
     fun updateCashCounted(amount: Long) = viewModelScope.launch {
         sessionRepository.updateCashCounted(amount)
+    }
+
+    fun printSessionClosure(session: CaisseSession) = viewModelScope.launch {
+        printer.printSessionClosure(session)
     }
 }
 
@@ -111,6 +117,7 @@ fun CaisseSessionScreen(viewModel: CaisseSessionViewModel = hiltViewModel()) {
                         session = openSession,
                         df = df,
                         onComptage = { showComptageDialog = true },
+                        onPrint = { viewModel.printSessionClosure(openSession) },
                     )
                 } else {
                     Text(
@@ -148,6 +155,7 @@ private fun OpenSessionCard(
     session: CaisseSession,
     df: SimpleDateFormat,
     onComptage: () -> Unit,
+    onPrint: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -249,6 +257,18 @@ private fun OpenSessionCard(
                 ),
             ) {
                 Text(if (session.cashCounted == null) "Compter la caisse" else "Recompter la caisse")
+            }
+            if (session.cashCounted != null) {
+                Button(
+                    onClick = onPrint,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                    ),
+                ) {
+                    Text("Imprimer la cloture")
+                }
             }
         }
     }

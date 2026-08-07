@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import com.maquis.caisse.core.SettingsKeys
+import com.maquis.caisse.domain.model.CaisseSession
 import com.maquis.caisse.domain.model.Order
 import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.repository.SettingsRepository
@@ -54,6 +55,11 @@ class EscPosPrinter @Inject constructor(
     suspend fun printOrder(order: Order): Result<Unit> = withContext(Dispatchers.IO) {
         if (!settings.isPrintEnabled()) return@withContext Result.success(Unit)
         printRaw(buildOrderTicket(order))
+    }
+
+    suspend fun printSessionClosure(session: CaisseSession): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!settings.isPrintEnabled()) return@withContext Result.failure(IllegalStateException("Impression désactivée"))
+        printRaw(buildSessionClosureTicket(session))
     }
 
     private suspend fun printRaw(lines: List<String>): Result<Unit> {
@@ -186,6 +192,46 @@ class EscPosPrinter @Inject constructor(
         out.write(byteArrayOf(0x0A, 0x0A, 0x0A))
         out.write(byteArrayOf(0x1D, 0x56, 0x00)) // GS V 0 — coupe papier
         out.flush()
+    }
+
+    private suspend fun buildSessionClosureTicket(session: CaisseSession): List<String> {
+        val width = settings.get(SettingsKeys.PRINT_WIDTH, "58").toIntOrNull() ?: 58
+        val shop = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse")
+        val address = settings.get(SettingsKeys.SHOP_ADDRESS, "")
+        val phone = settings.get(SettingsKeys.SHOP_PHONE, "")
+        val df = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
+        val sep = "-".repeat(if (width >= 80) 48 else 32)
+
+        val lines = mutableListOf<String>()
+        lines += center(shop, width)
+        if (address.isNotBlank()) lines += center(address, width)
+        if (phone.isNotBlank()) lines += center(phone, width)
+        lines += sep
+        lines += center("CLOTURE DE CAISSE", width)
+        lines += sep
+        lines += "Caissier : ${session.userName}"
+        lines += "Ouverture : ${df.format(Date(session.openedAt))}"
+        session.closedAt?.let { lines += "Cloture  : ${df.format(Date(it))}" }
+        lines += sep
+        lines += "Fond de caisse  : ${MoneyFormat.forPrinter(session.openingBalance)}"
+        lines += sep
+        lines += "Ventes especes  : ${MoneyFormat.forPrinter(session.cashSales)}"
+        lines += "Ventes mobile   : ${MoneyFormat.forPrinter(session.mobileSales)}"
+        lines += "Ventes dettes   : ${MoneyFormat.forPrinter(session.debtSales)}"
+        lines += "Total ventes    : ${MoneyFormat.forPrinter(session.totalAmount)}"
+        lines += sep
+        lines += "Esp. attendues  : ${MoneyFormat.forPrinter(session.cashTheoretical)}"
+        session.cashCounted?.let { counted ->
+            lines += "Esp. comptees   : ${MoneyFormat.forPrinter(counted)}"
+            val variance = session.cashVariance ?: 0L
+            val ecartLabel = if (variance >= 0) "Excedent        " else "Manquant        "
+            val ecartSign = if (variance >= 0) "+" else ""
+            lines += "$ecartLabel: $ecartSign${MoneyFormat.forPrinter(variance)}"
+        }
+        lines += sep
+        lines += center("Nb. ventes : ${session.salesCount}", width)
+        lines += sep
+        return lines
     }
 
     private suspend fun buildTestTicket(): List<String> {

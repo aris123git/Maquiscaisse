@@ -48,10 +48,11 @@ import com.maquis.caisse.data.print.EscPosPrinter
 import com.maquis.caisse.domain.model.CaisseSession
 import com.maquis.caisse.domain.repository.CaisseSessionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -70,27 +71,27 @@ class CaisseSessionViewModel @Inject constructor(
         .observeRecent()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    private val _printMessage = MutableStateFlow<String?>(null)
-    val printMessage: StateFlow<String?> = _printMessage.asStateFlow()
+    private val _printEvent = MutableSharedFlow<PrintEvent>(extraBufferCapacity = 1)
+    val printEvent: SharedFlow<PrintEvent> = _printEvent.asSharedFlow()
 
     fun updateCashCounted(amount: Long) = viewModelScope.launch {
         sessionRepository.updateCashCounted(amount)
     }
 
     fun printSessionClosure(session: CaisseSession) = viewModelScope.launch {
-        try {
-            val result = printer.printSessionClosure(session)
-            _printMessage.value = if (result.isSuccess) {
-                "Ticket de clôture imprimé"
-            } else {
-                "⚠ Impression : ${result.exceptionOrNull()?.message ?: "échec"}"
-            }
-        } catch (e: Exception) {
-            _printMessage.value = "⚠ Impression : ${e.message ?: "erreur inattendue"}"
+        val result = printer.printSessionClosure(session)
+        if (result.isSuccess) {
+            _printEvent.tryEmit(PrintEvent.Success)
+        } else {
+            val message = result.exceptionOrNull()?.message ?: "Erreur d'impression inconnue"
+            _printEvent.tryEmit(PrintEvent.Failure(message))
         }
     }
+}
 
-    fun consumePrintMessage() { _printMessage.value = null }
+sealed interface PrintEvent {
+    data object Success : PrintEvent
+    data class Failure(val message: String) : PrintEvent
 }
 
 // ── Screen ───────────────────────────────────────────────────────────────────
@@ -98,7 +99,6 @@ class CaisseSessionViewModel @Inject constructor(
 @Composable
 fun CaisseSessionScreen(viewModel: CaisseSessionViewModel = hiltViewModel()) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
-    val printMessage by viewModel.printMessage.collectAsStateWithLifecycle()
     val df = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -107,10 +107,13 @@ fun CaisseSessionScreen(viewModel: CaisseSessionViewModel = hiltViewModel()) {
 
     var showComptageDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(printMessage) {
-        val msg = printMessage ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(msg)
-        viewModel.consumePrintMessage()
+    LaunchedEffect(Unit) {
+        viewModel.printEvent.collect { event ->
+            when (event) {
+                is PrintEvent.Success -> snackbarHostState.showSnackbar("Ticket imprimé avec succès")
+                is PrintEvent.Failure -> snackbarHostState.showSnackbar("Erreur d'impression : ${event.message}")
+            }
+        }
     }
 
     if (showComptageDialog) {
@@ -125,7 +128,18 @@ fun CaisseSessionScreen(viewModel: CaisseSessionViewModel = hiltViewModel()) {
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                val isError = data.visuals.message.startsWith("Erreur")
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = if (isError) MaterialTheme.colorScheme.errorContainer
+                                     else MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer
+                                   else MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier

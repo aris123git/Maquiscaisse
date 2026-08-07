@@ -393,10 +393,19 @@ class OrderRepositoryImpl @Inject constructor(
             val orderEntity = existing
             val existingDette = detteDao.getByOrderId(orderId)
             if (existingDette != null) {
-                // Consolidate: add the new amount onto the existing debt record
+                // Consolidate: add the new amount onto the existing debt record and
+                // recompute status so the displayed remaining balance stays correct
+                // (e.g. a previously SETTLED dette must become PARTIAL when new debt arrives).
+                val newOriginal = existingDette.originalAmount + debtAmount
+                val recomputedStatus = when {
+                    existingDette.paidAmount >= newOriginal -> "SETTLED"
+                    existingDette.paidAmount > 0L -> "PARTIAL"
+                    else -> "OPEN"
+                }
                 detteDao.updateDette(
                     existingDette.copy(
-                        originalAmount = existingDette.originalAmount + debtAmount,
+                        originalAmount = newOriginal,
+                        status = recomputedStatus,
                     ),
                 )
             } else {

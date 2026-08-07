@@ -3,8 +3,12 @@ package com.maquis.caisse.data.print
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
+import android.content.Context
+import android.os.Build
 import com.maquis.caisse.core.SettingsKeys
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.maquis.caisse.domain.model.CaisseSession
 import com.maquis.caisse.domain.model.Order
 import com.maquis.caisse.domain.model.OrderStatus
@@ -30,6 +34,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class EscPosPrinter @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val settings: SettingsRepository,
 ) {
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
@@ -37,11 +42,20 @@ class EscPosPrinter @Inject constructor(
     private val retryDelayMs = 500L
     private val connectTimeoutMs = 2000L
 
+    /** Returns the BluetoothAdapter using the non-deprecated API on Android 12+ (API 31+). */
+    private fun bluetoothAdapter(): BluetoothAdapter? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(BluetoothManager::class.java)?.adapter
+        } else {
+            @Suppress("DEPRECATION")
+            BluetoothAdapter.getDefaultAdapter()
+        }
+
     suspend fun isEnabled(): Boolean = settings.isPrintEnabled()
 
     @SuppressLint("MissingPermission")
     fun bondedDevices(): List<BluetoothDevice> {
-        val adapter = BluetoothAdapter.getDefaultAdapter() ?: return emptyList()
+        val adapter = bluetoothAdapter() ?: return emptyList()
         return adapter.bondedDevices?.toList().orEmpty()
     }
 
@@ -73,7 +87,7 @@ class EscPosPrinter @Inject constructor(
         // Retry loop avec délai progressif
         for (attempt in 1..maxRetries) {
             try {
-                val adapter = BluetoothAdapter.getDefaultAdapter()
+                val adapter = bluetoothAdapter()
                     ?: return Result.failure(IllegalStateException("Bluetooth indisponible"))
 
                 val device = adapter.getRemoteDevice(address)

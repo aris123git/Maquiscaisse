@@ -391,20 +391,30 @@ class OrderRepositoryImpl @Inject constructor(
         if (mode == PaymentMode.DEBT) {
             val debtAmount = breakdown.totalAmount
             val orderEntity = existing
-            detteDao.insertDette(
-                DetteEntity(
-                    customerName = orderEntity.waitressName ?: "Client",
-                    orderId = orderId,
-                    orderPublicId = orderEntity.publicId,
-                    originalAmount = debtAmount,
-                    paidAmount = 0L,
-                    status = "OPEN",
-                    createdAt = now,
-                    userId = user.id,
-                    userName = user.name,
-                    note = "Commande ${orderEntity.publicId}",
-                ),
-            )
+            val existingDette = detteDao.getByOrderId(orderId)
+            if (existingDette != null) {
+                // Consolidate: add the new amount onto the existing debt record
+                detteDao.updateDette(
+                    existingDette.copy(
+                        originalAmount = existingDette.originalAmount + debtAmount,
+                    ),
+                )
+            } else {
+                detteDao.insertDette(
+                    DetteEntity(
+                        customerName = orderEntity.waitressName ?: "Client",
+                        orderId = orderId,
+                        orderPublicId = orderEntity.publicId,
+                        originalAmount = debtAmount,
+                        paidAmount = 0L,
+                        status = "OPEN",
+                        createdAt = now,
+                        userId = user.id,
+                        userName = user.name,
+                        note = "Commande ${orderEntity.publicId}",
+                    ),
+                )
+            }
         }
         getOrder(orderId) ?: error("Commande introuvable")
     }

@@ -29,6 +29,9 @@ interface DetteDao {
     @Query("SELECT * FROM dettes WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): DetteEntity?
 
+    @Query("SELECT * FROM dettes WHERE order_id = :orderId LIMIT 1")
+    suspend fun getByOrderId(orderId: Long): DetteEntity?
+
     @Query("SELECT * FROM dette_paiements WHERE dette_id = :detteId ORDER BY paid_at ASC")
     suspend fun getPaiements(detteId: Long): List<DettePaiementEntity>
 

@@ -73,6 +73,27 @@ object Migrations {
         }
     }
 
+    /** Sessions de caisse : ouverture/fermeture automatique à chaque login/logout. */
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `caisse_sessions` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `user_id` INTEGER NOT NULL,
+                    `user_name` TEXT NOT NULL,
+                    `opened_at` INTEGER NOT NULL,
+                    `closed_at` INTEGER,
+                    `sales_count` INTEGER NOT NULL DEFAULT 0,
+                    `total_amount` INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_caisse_sessions_user_id` ON `caisse_sessions` (`user_id`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_caisse_sessions_opened_at` ON `caisse_sessions` (`opened_at`)")
+        }
+    }
+
     /** Commandes maquis, users, tables, catégories, stock, audit, settings. */
     val MIGRATION_3_4 = object : Migration(3, 4) {
         override fun migrate(db: SupportSQLiteDatabase) {

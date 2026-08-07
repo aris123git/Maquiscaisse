@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.maquis.caisse.data.backup.BackupManager
 import com.maquis.caisse.data.local.AppDatabase
 import com.maquis.caisse.data.local.dao.AuditLogDao
+import com.maquis.caisse.data.local.dao.CaisseSessionDao
 import com.maquis.caisse.data.local.dao.CategoryDao
 import com.maquis.caisse.data.local.dao.DiningTableDao
 import com.maquis.caisse.data.local.dao.OrderDao
@@ -33,6 +34,7 @@ object DatabaseModule {
                 Migrations.MIGRATION_1_2,
                 Migrations.MIGRATION_2_3,
                 Migrations.MIGRATION_3_4,
+                Migrations.MIGRATION_4_5,
             )
             .build()
     }
@@ -46,4 +48,5 @@ object DatabaseModule {
     @Provides fun provideStockMovementDao(db: AppDatabase): StockMovementDao = db.stockMovementDao()
     @Provides fun provideAuditLogDao(db: AppDatabase): AuditLogDao = db.auditLogDao()
     @Provides fun provideSettingsDao(db: AppDatabase): SettingsDao = db.settingsDao()
+    @Provides fun provideCaisseSessionDao(db: AppDatabase): CaisseSessionDao = db.caisseSessionDao()
 }

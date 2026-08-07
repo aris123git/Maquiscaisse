@@ -32,10 +32,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.domain.model.Permissions
+import com.maquis.caisse.domain.repository.CaisseSessionRepository
 import com.maquis.caisse.navigation.Routes
 import com.maquis.caisse.ui.theme.GestionBlue
 import com.maquis.caisse.ui.theme.SidebarAccent
@@ -54,6 +57,7 @@ private data class NavItem(
 @HiltViewModel
 class SideBarViewModel @Inject constructor(
     private val session: SessionManager,
+    private val sessionRepository: CaisseSessionRepository,
 ) : ViewModel() {
     val currentUser = session.currentUser
 
@@ -63,7 +67,10 @@ class SideBarViewModel @Inject constructor(
     }
 
     fun logout() {
-        session.logout()
+        viewModelScope.launch {
+            sessionRepository.closeCurrentSession()
+            session.logout()
+        }
     }
 }
 

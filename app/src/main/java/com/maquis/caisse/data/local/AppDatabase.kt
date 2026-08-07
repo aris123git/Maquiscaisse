@@ -3,6 +3,7 @@ package com.maquis.caisse.data.local
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.maquis.caisse.data.local.dao.AuditLogDao
+import com.maquis.caisse.data.local.dao.CaisseSessionDao
 import com.maquis.caisse.data.local.dao.CategoryDao
 import com.maquis.caisse.data.local.dao.DiningTableDao
 import com.maquis.caisse.data.local.dao.OrderDao
@@ -13,6 +14,7 @@ import com.maquis.caisse.data.local.dao.StockMovementDao
 import com.maquis.caisse.data.local.dao.UserDao
 import com.maquis.caisse.data.local.entity.AppSettingEntity
 import com.maquis.caisse.data.local.entity.AuditLogEntity
+import com.maquis.caisse.data.local.entity.CaisseSessionEntity
 import com.maquis.caisse.data.local.entity.CategoryEntity
 import com.maquis.caisse.data.local.entity.DiningTableEntity
 import com.maquis.caisse.data.local.entity.OrderEntity
@@ -38,8 +40,9 @@ import com.maquis.caisse.data.local.entity.UserEntity
         StockMovementEntity::class,
         AuditLogEntity::class,
         AppSettingEntity::class,
+        CaisseSessionEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -52,4 +55,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun stockMovementDao(): StockMovementDao
     abstract fun auditLogDao(): AuditLogDao
     abstract fun settingsDao(): SettingsDao
+    abstract fun caisseSessionDao(): CaisseSessionDao
 }

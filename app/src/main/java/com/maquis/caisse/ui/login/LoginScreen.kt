@@ -65,6 +65,7 @@ import javax.inject.Inject
 class LoginViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val session: SessionManager,
+    private val sessionRepository: com.maquis.caisse.domain.repository.CaisseSessionRepository,
 ) : ViewModel() {
     val users: StateFlow<List<AppUser>> = userRepository.observeActive()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -89,6 +90,7 @@ class LoginViewModel @Inject constructor(
                 return@launch
             }
             session.setUser(user)
+            sessionRepository.openSession(user)
             onSuccess()
         }
     }

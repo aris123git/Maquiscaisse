@@ -72,6 +72,7 @@ data class ParametresUiState(
     val printWidth: String = "58",
     val printerAddress: String = "",
     val printerName: String = "",
+    val printerCodepage: String = "0",
     val tablesEnabled: Boolean = true,
     val devices: List<BtDeviceUi> = emptyList(),
     val message: String? = null,
@@ -280,6 +281,7 @@ class ParametresViewModel @Inject constructor(
                 printWidth = settings.get(SettingsKeys.PRINT_WIDTH, "58"),
                 printerAddress = settings.get(SettingsKeys.PRINTER_ADDRESS, ""),
                 printerName = settings.get(SettingsKeys.PRINTER_NAME, ""),
+                printerCodepage = settings.get(SettingsKeys.PRINTER_CODEPAGE, "0"),
                 tablesEnabled = settings.get(SettingsKeys.TABLES_ENABLED, "true") == "true",
             )
         }
@@ -302,6 +304,7 @@ class ParametresViewModel @Inject constructor(
         settings.set(SettingsKeys.PRINT_WIDTH, s.printWidth)
         settings.set(SettingsKeys.PRINTER_ADDRESS, s.printerAddress)
         settings.set(SettingsKeys.PRINTER_NAME, s.printerName)
+        settings.set(SettingsKeys.PRINTER_CODEPAGE, s.printerCodepage)
         settings.set(SettingsKeys.TABLES_ENABLED, s.tablesEnabled.toString())
         _ui.update { it.copy(message = "Paramètres enregistrés") }
     }
@@ -488,6 +491,20 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                 options = listOf("58", "80"),
                 optionLabel = { "$it mm" },
                 onSelect = { v -> if (v != null) viewModel.update { it.copy(printWidth = v) } },
+            )
+            DropdownField(
+                label = "Profil imprimante",
+                selected = ui.printerCodepage,
+                options = listOf("0", "16", "-1"),
+                optionLabel = { cp ->
+                    when (cp) {
+                        "0"  -> "Générique ESC/POS — PC437 (défaut)"
+                        "16" -> "WPC1252 / Windows-1252"
+                        "-1" -> "Sans sélection de page de codes (legacy)"
+                        else -> "Page $cp"
+                    }
+                },
+                onSelect = { v -> if (v != null) viewModel.update { it.copy(printerCodepage = v) } },
             )
             Text(
                 "Imprimante : ${ui.printerName.ifBlank { "aucune" }} ${ui.printerAddress}",

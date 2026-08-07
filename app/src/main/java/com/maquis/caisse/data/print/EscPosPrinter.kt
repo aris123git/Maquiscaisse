@@ -107,8 +107,9 @@ class EscPosPrinter @Inject constructor(
                     delay(200)
 
                     // Écrire les données
+                    val codepage = codepageSetting()
                     socket?.outputStream?.use { out ->
-                        writeEscPos(out, lines)
+                        writeEscPos(out, lines, codepage)
                     }
 
                     // Flush supplémentaire pour s'assurer que tout est envoyé
@@ -151,18 +152,29 @@ class EscPosPrinter @Inject constructor(
         )
     }
 
-    private fun writeEscPos(out: OutputStream, lines: List<String>) {
-        out.write(byteArrayOf(0x1B, 0x40)) // init
+    private suspend fun codepageSetting(): Int =
+        settings.get(SettingsKeys.PRINTER_CODEPAGE, "0").toIntOrNull() ?: 0
+
+    private fun writeEscPos(out: OutputStream, lines: List<String>, codepage: Int) {
+        out.write(byteArrayOf(0x1B, 0x40)) // ESC @ — init / reset imprimante
+        // ESC t n — sélectionne la page de codes.
+        // codepage 0  = PC437 (défaut occidental, corrige les caractères chinois sur SPT-II)
+        // codepage 16 = WPC1252
+        // codepage -1 = ne pas envoyer de commande (legacy)
+        if (codepage >= 0) {
+            out.write(byteArrayOf(0x1B, 0x74, codepage.toByte()))
+        }
         lines.forEach { rawLine ->
-            // Normaliser caractères potentiellement problématiques (NBSP, fullwidth digits)
-            val safeLine = rawLine.replace('\u00A0', ' ')
+            // Normaliser les espaces insécables (U+00A0 et U+202F) et fullwidth digits
+            val safeLine = rawLine
+                .replace('\u00A0', ' ')
+                .replace('\u202F', ' ')
                 .map { c ->
                     if (c in '\uFF10'..'\uFF19') {
                         ('0' + (c - '\uFF10')).toChar()
                     } else c
                 }.joinToString("")
 
-            // Essayer un encodage plus compatible avec les imprimantes thermiques
             val bytes = try {
                 safeLine.toByteArray(Charset.forName("ISO-8859-1"))
             } catch (e: Exception) {
@@ -172,7 +184,7 @@ class EscPosPrinter @Inject constructor(
             out.write(byteArrayOf(0x0A))
         }
         out.write(byteArrayOf(0x0A, 0x0A, 0x0A))
-        out.write(byteArrayOf(0x1D, 0x56, 0x00)) // cut
+        out.write(byteArrayOf(0x1D, 0x56, 0x00)) // GS V 0 — coupe papier
         out.flush()
     }
 

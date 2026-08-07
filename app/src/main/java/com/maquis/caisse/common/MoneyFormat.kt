@@ -15,8 +15,11 @@ object MoneyFormat {
     // Normalise les espaces non-breakable et fullwidth digits avant envoi vers les imprimantes.
     fun forPrinter(amount: Long): String {
         val raw = numberFormat.format(amount)
-        // NBSP -> ASCII space
-        val normalized = raw.replace('\u00A0', ' ')
+        // NBSP (U+00A0) et espace fine insécable (U+202F) -> ASCII space
+        // U+202F est utilisé comme séparateur de milliers par Locale.FRANCE sur Android 8+
+        val normalized = raw
+            .replace('\u00A0', ' ')
+            .replace('\u202F', ' ')
             // fullwidth digits -> ASCII
             .map { c ->
                 if (c in '\uFF10'..'\uFF19') {

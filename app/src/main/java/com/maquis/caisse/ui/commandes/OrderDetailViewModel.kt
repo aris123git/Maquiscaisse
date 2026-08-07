@@ -189,9 +189,6 @@ class OrderDetailViewModel @Inject constructor(
                     amount = payAmount,
                     amountTendered = tendered,
                 )
-                if (printer.isEnabled()) {
-                    printer.printOrder(updated)
-                }
                 _ui.update {
                     it.copy(
                         order = updated,

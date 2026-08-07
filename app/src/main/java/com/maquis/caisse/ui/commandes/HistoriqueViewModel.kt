@@ -35,7 +35,7 @@ data class HistoriqueUiState(
     val waitressId: Long? = null,
     val paymentMode: PaymentMode? = null,
     val categoryFilter: String? = null,
-    val period: HistoryPeriod = HistoryPeriod.TODAY,
+    val period: HistoryPeriod = HistoryPeriod.WEEK,
     val waitresses: List<AppUser> = emptyList(),
     val categories: List<String> = emptyList(),
     val waitressStats: WaitressStats? = null,

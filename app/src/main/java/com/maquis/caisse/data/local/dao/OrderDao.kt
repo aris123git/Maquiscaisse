@@ -82,7 +82,8 @@ interface OrderDao {
                     WHERE p.order_id = orders.id
                       AND p.payment_mode LIKE '%' || :query || '%'
                ))
-          AND created_at BETWEEN :fromMs AND :toMs
+          AND (created_at BETWEEN :fromMs AND :toMs
+               OR updated_at BETWEEN :fromMs AND :toMs)
         ORDER BY created_at DESC
         """,
     )

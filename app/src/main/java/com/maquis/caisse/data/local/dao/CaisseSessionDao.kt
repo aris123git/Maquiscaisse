@@ -16,12 +16,25 @@ interface CaisseSessionDao {
     @Query("SELECT * FROM caisse_sessions WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1")
     suspend fun getOpenSession(): CaisseSessionEntity?
 
-    /** Ferme la session et enregistre les totaux de la période. */
+    /** Ferme la session et enregistre les totaux de la période.
+     *  Compte les commandes PAYEE dont la date de paiement (updated_at) tombe dans la session.
+     *  Toutes les ventes — directes ou via Commandes — passent par la table `orders`.
+     */
     @Query("""
         UPDATE caisse_sessions
-        SET closed_at      = :closedAt,
-            sales_count    = (SELECT COUNT(*) FROM sales WHERE created_at >= opened_at AND created_at <= :closedAt),
-            total_amount   = (SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE created_at >= opened_at AND created_at <= :closedAt)
+        SET closed_at    = :closedAt,
+            sales_count  = (
+                SELECT COUNT(*) FROM orders
+                WHERE status = 'PAYEE'
+                  AND updated_at >= opened_at
+                  AND updated_at <= :closedAt
+            ),
+            total_amount = (
+                SELECT COALESCE(SUM(paid_amount), 0) FROM orders
+                WHERE status = 'PAYEE'
+                  AND updated_at >= opened_at
+                  AND updated_at <= :closedAt
+            )
         WHERE id = :sessionId
     """)
     suspend fun closeSession(sessionId: Long, closedAt: Long)

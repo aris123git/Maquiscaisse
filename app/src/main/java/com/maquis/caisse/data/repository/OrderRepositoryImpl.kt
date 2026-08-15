@@ -487,10 +487,12 @@ class OrderRepositoryImpl @Inject constructor(
             )
         }
 
-    private fun unitPurchasePrice(productId: Long, cache: MutableMap<Long, Long>): Long =
-        cache.getOrPut(productId) {
-            productDao.getById(productId)?.purchasePrice?.coerceAtLeast(0L) ?: 0L
-        }
+    private suspend fun unitPurchasePrice(productId: Long, cache: MutableMap<Long, Long>): Long {
+        cache[productId]?.let { return it }
+        val price = productDao.getById(productId)?.purchasePrice?.coerceAtLeast(0L) ?: 0L
+        cache[productId] = price
+        return price
+    }
 
     private fun OrderEntity.toSummary() = Order(
         id = id,

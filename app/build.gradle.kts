@@ -13,8 +13,8 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 23
-        versionName = "0.8.9-fix-backup-restore"
+        versionCode = 24
+        versionName = "0.8.10-restore-app-folder"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -100,6 +100,8 @@ dependencies {
     implementation("com.google.dagger:hilt-android:2.51.1")
     ksp("com.google.dagger:hilt-android-compiler:2.51.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
+
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     // Coil (images produits)
     implementation("io.coil-kt:coil-compose:2.6.0")

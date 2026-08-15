@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -328,6 +329,23 @@ class ParametresViewModel @Inject constructor(
         }
     }
 
+    fun importBackupFromFolder(treeUri: Uri) = viewModelScope.launch {
+        _ui.update { it.copy(backupBusy = true, message = "Restauration du dossier app…") }
+        val result = backupManager.importFromTreeUri(treeUri)
+        if (result.isSuccess) {
+            _ui.update { it.copy(message = "Restauration OK — redémarrage…") }
+            backupManager.restartApp()
+        } else {
+            val detail = result.exceptionOrNull()?.message ?: "Erreur inconnue"
+            _ui.update {
+                it.copy(
+                    backupBusy = false,
+                    message = "Échec restauration dossier : $detail",
+                )
+            }
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun refreshBluetoothDevices() {
         val devices = printer.bondedDevices().map { d ->
@@ -384,6 +402,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
     var permissionsReady by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingRestoreTree by remember { mutableStateOf<Uri?>(null) }
     var changeOwnPin by remember { mutableStateOf(false) }
     var kioskPinAction by remember { mutableStateOf<KioskPinAction?>(null) }
     var pendingKioskEnable by remember { mutableStateOf<Boolean?>(null) }
@@ -401,7 +420,25 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
         ActivityResultContracts.GetContent(),
     ) { uri ->
         if (uri != null) {
+            pendingRestoreTree = null
             pendingRestoreUri = uri
+            confirmRestore = true
+        }
+    }
+
+    val importFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { treeUri ->
+        if (treeUri != null) {
+            // Persiste l'accès au dossier (USB / Downloads).
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    treeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            pendingRestoreUri = null
+            pendingRestoreTree = treeUri
             confirmRestore = true
         }
     }
@@ -455,8 +492,9 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
         GlassCard {
         Text("Sauvegarde des données", style = MaterialTheme.typography.titleLarge)
         Text(
-            "Avant une mise à jour ou désinstallation, exporte une sauvegarde (.zip). " +
-                "Après réinstallation, restaure ce fichier (ou un .db). L'app redémarre ensuite.",
+            "Pour récupérer un ancien dossier app (Replit / copie USB) : " +
+                "sélectionne le dossier qui contient « databases » " +
+                "(avec maquis_caisse.db). Tu peux aussi restaurer un .zip ou .db.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -466,10 +504,15 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
         ) { Text("Exporter la sauvegarde") }
         OutlinedButton(
+            onClick = { importFolderLauncher.launch(null) },
+            enabled = !ui.backupBusy,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+        ) { Text("Restaurer depuis un dossier app") }
+        OutlinedButton(
             onClick = { importLauncher.launch("*/*") },
             enabled = !ui.backupBusy,
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-        ) { Text("Restaurer une sauvegarde (.zip ou .db)") }
+        ) { Text("Restaurer un fichier (.zip ou .db)") }
         }
 
         TextPill("Impression", PillTone.CYAN)
@@ -647,22 +690,33 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             onDismissRequest = {
                 confirmRestore = false
                 pendingRestoreUri = null
+                pendingRestoreTree = null
             },
             title = { Text("Restaurer la sauvegarde ?") },
             text = {
                 Text(
-                    "Les données actuelles seront remplacées. " +
-                        "Choisis le .zip exporté depuis NexaGes (ou un fichier maquis_caisse.db). " +
-                        "L'application redémarrera ensuite.",
+                    if (pendingRestoreTree != null) {
+                        "Les données actuelles seront remplacées par ce dossier app " +
+                            "(databases + images + préférences). L'application redémarrera."
+                    } else {
+                        "Les données actuelles seront remplacées. " +
+                            "Choisis un .zip, un .db, ou un dossier contenant databases/maquis_caisse.db. " +
+                            "L'application redémarrera ensuite."
+                    },
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val uri = pendingRestoreUri
+                        val fileUri = pendingRestoreUri
+                        val treeUri = pendingRestoreTree
                         confirmRestore = false
                         pendingRestoreUri = null
-                        if (uri != null) viewModel.importBackup(uri)
+                        pendingRestoreTree = null
+                        when {
+                            treeUri != null -> viewModel.importBackupFromFolder(treeUri)
+                            fileUri != null -> viewModel.importBackup(fileUri)
+                        }
                     },
                 ) { Text("Restaurer") }
             },
@@ -671,6 +725,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                     onClick = {
                         confirmRestore = false
                         pendingRestoreUri = null
+                        pendingRestoreTree = null
                     },
                 ) { Text("Annuler") }
             },

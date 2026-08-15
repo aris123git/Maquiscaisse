@@ -13,8 +13,8 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 22
-        versionName = "0.8.8-benefices-periodes"
+        versionCode = 23
+        versionName = "0.8.9-fix-backup-restore"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

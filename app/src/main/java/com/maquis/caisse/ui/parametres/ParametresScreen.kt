@@ -312,15 +312,17 @@ class ParametresViewModel @Inject constructor(
     }
 
     fun importBackup(uri: Uri) = viewModelScope.launch {
-        _ui.update { it.copy(backupBusy = true, message = "Restauration… l'app va redémarrer") }
+        _ui.update { it.copy(backupBusy = true, message = "Restauration en cours…") }
         val result = backupManager.importFromUri(uri)
         if (result.isSuccess) {
+            _ui.update { it.copy(message = "Restauration OK — redémarrage…") }
             backupManager.restartApp()
         } else {
+            val detail = result.exceptionOrNull()?.message ?: "Erreur inconnue"
             _ui.update {
                 it.copy(
                     backupBusy = false,
-                    message = result.exceptionOrNull()?.message ?: "Échec de la restauration",
+                    message = "Échec restauration : $detail",
                 )
             }
         }
@@ -396,7 +398,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
     }
 
     val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
+        ActivityResultContracts.GetContent(),
     ) { uri ->
         if (uri != null) {
             pendingRestoreUri = uri
@@ -453,8 +455,8 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
         GlassCard {
         Text("Sauvegarde des données", style = MaterialTheme.typography.titleLarge)
         Text(
-            "Avant une désinstallation (conflit d'APK), exporte une sauvegarde. " +
-                "Après réinstallation, restaure ce fichier. La caisse n'est pas ralentie.",
+            "Avant une mise à jour ou désinstallation, exporte une sauvegarde (.zip). " +
+                "Après réinstallation, restaure ce fichier (ou un .db). L'app redémarre ensuite.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -464,10 +466,10 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
         ) { Text("Exporter la sauvegarde") }
         OutlinedButton(
-            onClick = { importLauncher.launch(arrayOf(BackupManager.MIME_ZIP, "application/octet-stream", "*/*")) },
+            onClick = { importLauncher.launch("*/*") },
             enabled = !ui.backupBusy,
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-        ) { Text("Restaurer une sauvegarde") }
+        ) { Text("Restaurer une sauvegarde (.zip ou .db)") }
         }
 
         TextPill("Impression", PillTone.CYAN)
@@ -649,7 +651,9 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             title = { Text("Restaurer la sauvegarde ?") },
             text = {
                 Text(
-                    "Les données actuelles seront remplacées. L'application redémarrera ensuite.",
+                    "Les données actuelles seront remplacées. " +
+                        "Choisis le .zip exporté depuis NexaGes (ou un fichier maquis_caisse.db). " +
+                        "L'application redémarrera ensuite.",
                 )
             },
             confirmButton = {

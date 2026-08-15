@@ -25,10 +25,13 @@ import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.domain.model.AppUser
 import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.model.PaymentMode
+import com.maquis.caisse.ui.charts.CustomPeriodPickers
+import com.maquis.caisse.ui.charts.PeriodSelector
 import com.maquis.caisse.ui.common.DropdownField
 import com.maquis.caisse.ui.common.PageHeader
 import com.maquis.caisse.ui.common.PillTone
 import com.maquis.caisse.ui.common.TextPill
+import com.maquis.caisse.ui.theme.GestionSuccess
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -119,22 +122,16 @@ private fun HistoryListPane(
             singleLine = true,
             placeholder = { Text("ID, date, heure, serveuse, table, produit…") },
         )
+        PeriodSelector(selected = ui.period, onSelect = viewModel::onPeriod)
+        CustomPeriodPickers(
+            period = ui.period,
+            customDayMs = ui.customDayMs,
+            customFromMs = ui.customFromMs,
+            customToMs = ui.customToMs,
+            onCustomDay = viewModel::onCustomDay,
+            onCustomRange = viewModel::onCustomRange,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            DropdownField(
-                label = "Période",
-                selected = ui.period,
-                options = HistoryPeriod.entries,
-                optionLabel = {
-                    when (it) {
-                        HistoryPeriod.TODAY -> "Aujourd'hui"
-                        HistoryPeriod.WEEK -> "7 jours"
-                        HistoryPeriod.MONTH -> "30 jours"
-                        HistoryPeriod.ALL -> "Tout"
-                    }
-                },
-                onSelect = { it?.let(viewModel::onPeriod) },
-                modifier = Modifier.weight(1f),
-            )
             DropdownField(
                 label = "Statut",
                 selected = ui.status,
@@ -145,11 +142,6 @@ private fun HistoryListPane(
                 nullLabel = "Tous",
                 modifier = Modifier.weight(1f),
             )
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        ) {
             DropdownField(
                 label = "Serveuse",
                 selected = ui.waitresses.firstOrNull { it.id == ui.waitressId },
@@ -160,6 +152,11 @@ private fun HistoryListPane(
                 nullLabel = "Toutes",
                 modifier = Modifier.weight(1f),
             )
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        ) {
             DropdownField(
                 label = "Paiement",
                 selected = ui.paymentMode,
@@ -240,6 +237,17 @@ private fun HistoryStatsPane(
         } else {
             Text("Aucune donnée pour cette période", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        ui.dashboard?.let { d ->
+            Text(
+                "Coût d'achat : ${MoneyFormat.format(d.costOfGoods)}",
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Bénéfice : ${MoneyFormat.format(d.benefice)} (${d.marginPercent} %)",
+                fontWeight = FontWeight.Bold,
+                color = GestionSuccess,
+            )
+        }
 
         Text("Par catégorie", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
         ui.categoryRows.forEach { row ->
@@ -252,12 +260,18 @@ private fun HistoryStatsPane(
         if (ui.categoryRows.isNotEmpty()) {
             val totalQty = ui.categoryRows.sumOf { it.quantity }
             val totalRev = ui.categoryRows.sumOf { it.revenue }
+            val totalBenef = ui.categoryRows.sumOf { it.benefice }
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("TOTAL", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.2f))
                 Text("$totalQty", fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.5f))
                 Text(MoneyFormat.format(totalRev), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             }
+            Text(
+                "Bénéfice catégories : ${MoneyFormat.format(totalBenef)}",
+                fontWeight = FontWeight.SemiBold,
+                color = GestionSuccess,
+            )
         }
 
         Text("Par produit", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))

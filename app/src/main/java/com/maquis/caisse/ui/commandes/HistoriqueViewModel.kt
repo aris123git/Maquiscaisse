@@ -3,13 +3,15 @@ package com.maquis.caisse.ui.commandes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.maquis.caisse.domain.model.AppUser
+import com.maquis.caisse.domain.model.Category
 import com.maquis.caisse.domain.model.CategorySalesRow
+import com.maquis.caisse.domain.model.DashboardStats
 import com.maquis.caisse.domain.model.Order
 import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.domain.model.ProductSalesRow
+import com.maquis.caisse.domain.model.StatsPeriod
 import com.maquis.caisse.domain.model.WaitressStats
-import com.maquis.caisse.domain.model.Category
 import com.maquis.caisse.domain.repository.CategoryRepository
 import com.maquis.caisse.domain.repository.OrderRepository
 import com.maquis.caisse.domain.repository.UserRepository
@@ -27,18 +29,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class HistoryPeriod { TODAY, WEEK, MONTH, ALL }
-
 data class HistoriqueUiState(
     val query: String = "",
     val status: OrderStatus? = null,
     val waitressId: Long? = null,
     val paymentMode: PaymentMode? = null,
     val categoryFilter: String? = null,
-    val period: HistoryPeriod = HistoryPeriod.TODAY,
+    val period: StatsPeriod = StatsPeriod.TODAY,
+    val customDayMs: Long = System.currentTimeMillis(),
+    val customFromMs: Long = DateRanges.todayBounds().first,
+    val customToMs: Long = DateRanges.todayBounds().second,
     val waitresses: List<AppUser> = emptyList(),
     val categories: List<String> = emptyList(),
     val waitressStats: WaitressStats? = null,
+    val dashboard: DashboardStats? = null,
     val categoryRows: List<CategorySalesRow> = emptyList(),
     val productRows: List<ProductSalesRow> = emptyList(),
 )
@@ -56,7 +60,7 @@ class HistoriqueViewModel @Inject constructor(
 
     val orders: StateFlow<List<Order>> = _ui
         .flatMapLatest { state ->
-            val (from, to) = bounds(state.period)
+            val (from, to) = bounds(state)
             orderRepository.observeFiltered(
                 query = state.query,
                 status = state.status,
@@ -101,8 +105,24 @@ class HistoriqueViewModel @Inject constructor(
         refreshStats()
     }
 
-    fun onPeriod(p: HistoryPeriod) {
+    fun onPeriod(p: StatsPeriod) {
         _ui.update { it.copy(period = p) }
+        refreshStats()
+    }
+
+    fun onCustomDay(ms: Long) {
+        _ui.update { it.copy(customDayMs = ms, period = StatsPeriod.CUSTOM_DAY) }
+        refreshStats()
+    }
+
+    fun onCustomRange(fromMs: Long, toMs: Long) {
+        _ui.update {
+            it.copy(
+                customFromMs = fromMs,
+                customToMs = toMs,
+                period = StatsPeriod.CUSTOM_RANGE,
+            )
+        }
         refreshStats()
     }
 
@@ -119,12 +139,12 @@ class HistoriqueViewModel @Inject constructor(
     fun refreshStats() {
         viewModelScope.launch {
             val state = _ui.value
-            val (from, to) = bounds(state.period)
+            val (from, to) = bounds(state)
+            val dash = orderRepository.dashboard(from, to)
             val statsList = orderRepository.waitressStats(from, to, state.waitressId)
             val stats = if (state.waitressId != null) {
                 statsList.firstOrNull { it.waitressId == state.waitressId }
             } else {
-                // Agrégat toutes serveuses
                 if (statsList.isEmpty()) {
                     null
                 } else {
@@ -153,6 +173,7 @@ class HistoriqueViewModel @Inject constructor(
             _ui.update {
                 it.copy(
                     waitressStats = stats,
+                    dashboard = dash,
                     categoryRows = cats,
                     productRows = products.take(40),
                 )
@@ -162,10 +183,11 @@ class HistoriqueViewModel @Inject constructor(
 
     fun filterDisplayed(orders: List<Order>): List<Order> = orders
 
-    private fun bounds(period: HistoryPeriod): Pair<Long, Long> = when (period) {
-        HistoryPeriod.TODAY -> DateRanges.todayBounds()
-        HistoryPeriod.WEEK -> DateRanges.lastDaysBounds(7)
-        HistoryPeriod.MONTH -> DateRanges.lastDaysBounds(30)
-        HistoryPeriod.ALL -> DateRanges.allTimeBounds()
-    }
+    private fun bounds(state: HistoriqueUiState): Pair<Long, Long> =
+        DateRanges.boundsFor(
+            state.period,
+            customDayMs = state.customDayMs,
+            customFromMs = state.customFromMs,
+            customToMs = state.customToMs,
+        )
 }

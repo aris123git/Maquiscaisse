@@ -417,15 +417,22 @@ class OrderRepositoryImpl @Inject constructor(
             val orders = orderDao.listBetween(fromMs, toMs)
                 .filter { it.status != OrderStatus.ANNULEE.storageKey }
                 .filter { waitressId == null || it.waitressId == waitressId }
-            val rows = mutableMapOf<String, Pair<Int, Long>>()
+            val costCache = mutableMapOf<Long, Long>()
+            data class Acc(val qty: Int, val revenue: Long, val cost: Long)
+            val rows = mutableMapOf<String, Acc>()
             orders.forEach { order ->
                 orderDao.getItems(order.id).forEach { item ->
                     val key = item.categoryName.ifBlank { "Divers" }
-                    val prev = rows[key] ?: (0 to 0L)
-                    rows[key] = (prev.first + item.quantity) to (prev.second + item.lineTotal)
+                    val unitCost = unitPurchasePrice(item.productId, costCache)
+                    val prev = rows[key] ?: Acc(0, 0L, 0L)
+                    rows[key] = Acc(
+                        qty = prev.qty + item.quantity,
+                        revenue = prev.revenue + item.lineTotal,
+                        cost = prev.cost + unitCost * item.quantity,
+                    )
                 }
             }
-            rows.map { (name, v) -> CategorySalesRow(name, v.first, v.second) }
+            rows.map { (name, v) -> CategorySalesRow(name, v.qty, v.revenue, v.cost) }
                 .sortedByDescending { it.revenue }
         }
 
@@ -434,16 +441,20 @@ class OrderRepositoryImpl @Inject constructor(
             val orders = orderDao.listBetween(fromMs, toMs)
                 .filter { it.status != OrderStatus.ANNULEE.storageKey }
                 .filter { waitressId == null || it.waitressId == waitressId }
+            val costCache = mutableMapOf<Long, Long>()
             val rows = mutableMapOf<String, ProductSalesRow>()
             orders.forEach { order ->
                 orderDao.getItems(order.id).forEach { item ->
                     val key = item.productName
+                    val unitCost = unitPurchasePrice(item.productId, costCache)
+                    val lineCost = unitCost * item.quantity
                     val prev = rows[key]
                     rows[key] = ProductSalesRow(
                         productName = item.productName,
                         categoryName = item.categoryName.ifBlank { "Divers" },
                         quantity = (prev?.quantity ?: 0) + item.quantity,
                         revenue = (prev?.revenue ?: 0L) + item.lineTotal,
+                        cost = (prev?.cost ?: 0L) + lineCost,
                     )
                 }
             }
@@ -460,16 +471,25 @@ class OrderRepositoryImpl @Inject constructor(
             }
             val generated = orders.sumOf { it.totalAmount }
             val collected = orders.sumOf { it.paidAmount }
+            val products = productSales(fromMs, toMs, null)
+            val cost = products.sumOf { it.cost }
             DashboardStats(
                 ordersToday = orders.size,
                 openOrders = open,
                 caGenerated = generated,
                 caCollected = collected,
                 toCollect = (generated - collected).coerceAtLeast(0L),
-                topProducts = productSales(fromMs, toMs, null).take(5),
+                costOfGoods = cost,
+                benefice = generated - cost,
+                topProducts = products.take(5),
                 topCategories = categorySales(fromMs, toMs, null).take(5),
                 waitressStats = waitressStats(fromMs, toMs, null),
             )
+        }
+
+    private fun unitPurchasePrice(productId: Long, cache: MutableMap<Long, Long>): Long =
+        cache.getOrPut(productId) {
+            productDao.getById(productId)?.purchasePrice?.coerceAtLeast(0L) ?: 0L
         }
 
     private fun OrderEntity.toSummary() = Order(

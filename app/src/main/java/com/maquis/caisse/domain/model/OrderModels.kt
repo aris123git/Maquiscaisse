@@ -81,14 +81,20 @@ data class CategorySalesRow(
     val categoryName: String,
     val quantity: Int,
     val revenue: Long,
-)
+    val cost: Long = 0L,
+) {
+    val benefice: Long get() = revenue - cost
+}
 
 data class ProductSalesRow(
     val productName: String,
     val categoryName: String,
     val quantity: Int,
     val revenue: Long,
-)
+    val cost: Long = 0L,
+) {
+    val benefice: Long get() = revenue - cost
+}
 
 data class DashboardStats(
     val ordersToday: Int,
@@ -96,7 +102,16 @@ data class DashboardStats(
     val caGenerated: Long,
     val caCollected: Long,
     val toCollect: Long,
+    /** Coût d'achat des produits vendus (prix d'achat × qté). */
+    val costOfGoods: Long = 0L,
+    /** Bénéfice = CA généré − coût d'achat. */
+    val benefice: Long = 0L,
     val topProducts: List<ProductSalesRow>,
     val topCategories: List<CategorySalesRow>,
     val waitressStats: List<WaitressStats>,
-)
+) {
+    /** Marge en % du CA (0 si CA nul). */
+    val marginPercent: Int
+        get() = if (caGenerated <= 0L) 0
+        else ((benefice * 100L) / caGenerated).toInt()
+}

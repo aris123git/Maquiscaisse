@@ -41,6 +41,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.domain.model.WaitressStats
+import com.maquis.caisse.ui.charts.CustomPeriodPickers
+import com.maquis.caisse.ui.charts.PeriodSelector
 import com.maquis.caisse.ui.common.GlassCard
 import com.maquis.caisse.ui.common.PageHeader
 import com.maquis.caisse.ui.theme.GestionBlue
@@ -59,7 +61,7 @@ private val ChartPalette = listOf(
 
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
-    val stats by viewModel.stats.collectAsStateWithLifecycle()
+    val ui by viewModel.ui.collectAsStateWithLifecycle()
     var selectedWaitressId by remember { mutableStateOf<Long?>(null) }
 
     Column(
@@ -71,12 +73,22 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
     ) {
         PageHeader(
             title = "Tableau de bord",
-            subtitle = "Aujourd'hui — graphes en haut, chiffres en bas",
+            subtitle = "${ui.period.label} — CA, coûts et bénéfices",
             actionLabel = "Actualiser",
             onAction = viewModel::refresh,
         )
 
-        val s = stats
+        PeriodSelector(selected = ui.period, onSelect = viewModel::onPeriod)
+        CustomPeriodPickers(
+            period = ui.period,
+            customDayMs = ui.customDayMs,
+            customFromMs = ui.customFromMs,
+            customToMs = ui.customToMs,
+            onCustomDay = viewModel::onCustomDay,
+            onCustomRange = viewModel::onCustomRange,
+        )
+
+        val s = ui.stats
         if (s == null) {
             Text("Chargement…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             return
@@ -144,7 +156,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
         }
 
         Text(
-            "Chiffres du jour",
+            "Chiffres de la période",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = GestionBlue,
@@ -165,11 +177,24 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
             KpiChip("Encaissé", MoneyFormat.format(s.caCollected), Modifier.weight(1f), GestionCyan)
             KpiChip("À encaisser", MoneyFormat.format(s.toCollect), Modifier.weight(1f), GestionWarning)
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            KpiChip("Coût d'achat", MoneyFormat.format(s.costOfGoods), Modifier.weight(1f), GestionWarning)
+            KpiChip(
+                "Bénéfice",
+                MoneyFormat.format(s.benefice),
+                Modifier.weight(1f),
+                if (s.benefice >= 0) GestionSuccess else Color(0xFFDC2626),
+            )
+            KpiChip("Marge", "${s.marginPercent} %", Modifier.weight(1f), GestionBlue)
+        }
 
         GlassCard {
             Text("Serveuses", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (s.waitressStats.isEmpty()) {
-                Text("Aucune vente serveuse aujourd'hui", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Aucune vente serveuse sur la période", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 s.waitressStats.forEach { w ->
                     val isSelected = w.waitressId == selectedWaitressId

@@ -233,4 +233,110 @@ object Migrations {
             )
         }
     }
+
+    /** Sessions de caisse : ouverture/fermeture (schéma v5 — sauvegardes Replit). */
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `caisse_sessions` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `user_id` INTEGER NOT NULL,
+                    `user_name` TEXT NOT NULL,
+                    `opened_at` INTEGER NOT NULL,
+                    `closed_at` INTEGER,
+                    `sales_count` INTEGER NOT NULL DEFAULT 0,
+                    `total_amount` INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_caisse_sessions_user_id` ON `caisse_sessions` (`user_id`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_caisse_sessions_opened_at` ON `caisse_sessions` (`opened_at`)",
+            )
+        }
+    }
+
+    /** Dettes, avoirs et colonnes financières de session (v5 → v6). */
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE caisse_sessions ADD COLUMN `opening_balance` INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL(
+                "ALTER TABLE caisse_sessions ADD COLUMN `cash_sales` INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL(
+                "ALTER TABLE caisse_sessions ADD COLUMN `mobile_sales` INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL(
+                "ALTER TABLE caisse_sessions ADD COLUMN `debt_sales` INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL("ALTER TABLE caisse_sessions ADD COLUMN `cash_counted` INTEGER")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `dettes` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `customer_name` TEXT NOT NULL,
+                    `customer_phone` TEXT NOT NULL DEFAULT '',
+                    `order_id` INTEGER,
+                    `order_public_id` TEXT,
+                    `original_amount` INTEGER NOT NULL,
+                    `paid_amount` INTEGER NOT NULL DEFAULT 0,
+                    `status` TEXT NOT NULL DEFAULT 'OPEN',
+                    `created_at` INTEGER NOT NULL,
+                    `user_id` INTEGER,
+                    `user_name` TEXT NOT NULL DEFAULT '',
+                    `note` TEXT NOT NULL DEFAULT ''
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_dettes_created_at` ON `dettes` (`created_at`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_dettes_status` ON `dettes` (`status`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_dettes_order_id` ON `dettes` (`order_id`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `dette_paiements` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `dette_id` INTEGER NOT NULL,
+                    `amount` INTEGER NOT NULL,
+                    `paid_at` INTEGER NOT NULL,
+                    `user_id` INTEGER,
+                    `user_name` TEXT NOT NULL DEFAULT '',
+                    `note` TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY(`dette_id`) REFERENCES `dettes`(`id`) ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_dette_paiements_dette_id` ON `dette_paiements` (`dette_id`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_dette_paiements_paid_at` ON `dette_paiements` (`paid_at`)",
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `avoirs` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `order_id` INTEGER,
+                    `order_public_id` TEXT,
+                    `customer_name` TEXT NOT NULL DEFAULT '',
+                    `reason` TEXT NOT NULL,
+                    `amount` INTEGER NOT NULL,
+                    `created_at` INTEGER NOT NULL,
+                    `user_id` INTEGER,
+                    `user_name` TEXT NOT NULL DEFAULT '',
+                    `note` TEXT NOT NULL DEFAULT ''
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_avoirs_created_at` ON `avoirs` (`created_at`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_avoirs_order_id` ON `avoirs` (`order_id`)")
+        }
+    }
 }

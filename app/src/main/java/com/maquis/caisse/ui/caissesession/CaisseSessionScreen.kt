@@ -11,8 +11,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 
 /**
- * Placeholder — implémentation complète prévue au Sprint 5 (voir prompt Cursor).
- * Ne pas ajouter de logique métier ici avant ce sprint.
+ * Placeholder UI — la table Room `caisse_sessions` (schéma v5/v6) est déjà en place
+ * pour permettre la restauration des sauvegardes Replit. Écran métier à brancher ensuite.
  */
 @Composable
 fun CaisseSessionScreen() {
@@ -21,7 +21,10 @@ fun CaisseSessionScreen() {
             modifier = Modifier.fillMaxSize().padding(padding),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text = "Ouverture / fermeture de caisse — à venir (Sprint 5)", style = MaterialTheme.typography.titleLarge)
+            Text(
+                text = "Sessions de caisse (schéma v6 prêt) — écran métier à venir",
+                style = MaterialTheme.typography.titleLarge,
+            )
         }
     }
 }

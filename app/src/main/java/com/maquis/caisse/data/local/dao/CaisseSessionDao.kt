@@ -1,0 +1,47 @@
+package com.maquis.caisse.data.local.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
+import com.maquis.caisse.data.local.entity.CaisseSessionEntity
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface CaisseSessionDao {
+
+    @Insert
+    suspend fun insert(session: CaisseSessionEntity): Long
+
+    @Query("SELECT * FROM caisse_sessions WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1")
+    suspend fun getOpenSession(): CaisseSessionEntity?
+
+    /** Ferme la session avec les totaux pré-calculés côté repository. */
+    @Query("""
+        UPDATE caisse_sessions
+        SET closed_at    = :closedAt,
+            cash_counted = :cashCounted,
+            sales_count  = :salesCount,
+            total_amount = :totalAmount,
+            cash_sales   = :cashSales,
+            mobile_sales = :mobileSales,
+            debt_sales   = :debtSales
+        WHERE id = :sessionId
+    """)
+    suspend fun closeSession(
+        sessionId: Long,
+        closedAt: Long,
+        cashCounted: Long?,
+        salesCount: Int,
+        totalAmount: Long,
+        cashSales: Long,
+        mobileSales: Long,
+        debtSales: Long,
+    )
+
+    /** Met à jour uniquement le comptage espèces sans fermer la session. */
+    @Query("UPDATE caisse_sessions SET cash_counted = :cashCounted WHERE id = :sessionId")
+    suspend fun updateCashCounted(sessionId: Long, cashCounted: Long)
+
+    @Query("SELECT * FROM caisse_sessions ORDER BY opened_at DESC LIMIT 30")
+    fun observeRecent(): Flow<List<CaisseSessionEntity>>
+}

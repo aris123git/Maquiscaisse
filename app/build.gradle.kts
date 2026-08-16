@@ -13,8 +13,8 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 22
-        versionName = "0.8.8-benefices-periodes"
+        versionCode = 25
+        versionName = "0.8.11-schema-v6-restore"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -100,6 +100,8 @@ dependencies {
     implementation("com.google.dagger:hilt-android:2.51.1")
     ksp("com.google.dagger:hilt-android-compiler:2.51.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
+
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     // Coil (images produits)
     implementation("io.coil-kt:coil-compose:2.6.0")

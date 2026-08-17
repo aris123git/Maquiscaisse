@@ -38,7 +38,7 @@ interface OrderRepository {
     suspend fun productSales(fromMs: Long, toMs: Long, waitressId: Long?): List<ProductSalesRow>
     suspend fun dashboard(fromMs: Long, toMs: Long): DashboardStats
     suspend fun bilanJour(fromMs: Long, toMs: Long): Map<String, Long>
-    /** CA / bénéfice uniquement sur commandes PAYEE, filtrées par caissier. */
+    /** CA / bénéfice : commandes PAYEE uniquement, hors dette, moins les dépenses. */
     suspend fun cashierPeriodStats(
         fromMs: Long,
         toMs: Long,

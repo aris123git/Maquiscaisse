@@ -182,7 +182,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
         ) {
             KpiChip("Commandes", "${s.ordersToday}", Modifier.weight(1f), GestionBlue)
             KpiChip("En cours", "${s.openOrders}", Modifier.weight(1f), GestionWarning)
-            KpiChip("CA généré", MoneyFormat.format(s.caGenerated), Modifier.weight(1.2f), GestionSuccess)
+            KpiChip("CA", MoneyFormat.format(s.caGenerated), Modifier.weight(1.2f), GestionSuccess)
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -190,6 +190,9 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
         ) {
             KpiChip("Encaissé", MoneyFormat.format(s.caCollected), Modifier.weight(1f), GestionCyan)
             KpiChip("À encaisser", MoneyFormat.format(s.toCollect), Modifier.weight(1f), GestionWarning)
+            if (s.expensesTotal > 0L) {
+                KpiChip("Dépenses", MoneyFormat.format(s.expensesTotal), Modifier.weight(1f), GestionWarning)
+            }
         }
 
         GlassCard {

@@ -18,6 +18,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.maquis.caisse.ui.assistant.AssistantScreen
+import com.maquis.caisse.ui.avoirs.AvoirsScreen
 import com.maquis.caisse.ui.caisse.CaisseScreen
 import com.maquis.caisse.ui.categories.CategoriesScreen
 import com.maquis.caisse.ui.commandes.CommandesScreen
@@ -26,6 +27,7 @@ import com.maquis.caisse.ui.commandes.OrderDetailScreen
 import com.maquis.caisse.ui.components.MaquisSideBar
 import com.maquis.caisse.ui.components.SideBarViewModel
 import com.maquis.caisse.ui.dashboard.DashboardScreen
+import com.maquis.caisse.ui.dettes.DettesScreen
 import com.maquis.caisse.ui.parametres.ParametresScreen
 import com.maquis.caisse.ui.produits.ProduitsScreen
 import com.maquis.caisse.ui.rapports.RapportsScreen
@@ -103,6 +105,8 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
                     }
                 }
                 composable(Routes.STOCK) { StockScreen() }
+                composable(Routes.DETTES) { DettesScreen() }
+                composable(Routes.AVOIRS) { AvoirsScreen() }
                 composable(Routes.MOUVEMENTS) { SuiviAdminScreen() }
                 composable(Routes.RAPPORTS) { RapportsScreen() }
                 composable(Routes.UTILISATEURS) {

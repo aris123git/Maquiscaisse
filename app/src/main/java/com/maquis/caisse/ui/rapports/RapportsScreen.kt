@@ -227,13 +227,16 @@ fun RapportsScreen(viewModel: RapportsViewModel = hiltViewModel()) {
 
         val d = ui.dashboard
         if (d != null) {
-            Text("CA généré : ${MoneyFormat.format(d.caGenerated)}", fontWeight = FontWeight.Bold)
-            Text("CA encaissé : ${MoneyFormat.format(d.caCollected)}", fontWeight = FontWeight.Bold)
+            Text("CA (payé − dépenses) : ${MoneyFormat.format(d.caGenerated)}", fontWeight = FontWeight.Bold)
+            Text("Encaissé (après dépenses) : ${MoneyFormat.format(d.caCollected)}", fontWeight = FontWeight.Bold)
             Text("Reste à encaisser : ${MoneyFormat.format(d.toCollect)}", fontWeight = FontWeight.Bold)
             Text(
                 "Coût d'achat : ${MoneyFormat.format(d.costOfGoods)}",
                 fontWeight = FontWeight.Bold,
             )
+            if (d.expensesTotal > 0L) {
+                Text("Dépenses : ${MoneyFormat.format(d.expensesTotal)}", fontWeight = FontWeight.Bold)
+            }
             Text(
                 "Bénéfice : ${MoneyFormat.format(d.benefice)} (${d.marginPercent} %)",
                 fontWeight = FontWeight.Bold,

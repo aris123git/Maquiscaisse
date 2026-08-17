@@ -189,41 +189,17 @@ class OrderDetailViewModel @Inject constructor(
                 val updated = orderRepository.payOrder(
                     orderId = order.id,
                     mode = mode,
-                    amount = payAmount,
                     amountTendered = tendered,
+                    amount = payAmount,
                 )
-                if (printer.isEnabled()) {
-                    val printResult = printer.printOrder(updated)
-                    val fullyPaid = updated.status == OrderStatus.PAYEE
-                    val payMsg = if (fullyPaid) "Commande payée" else "Paiement partiel enregistré"
-                    val printHint = if (printResult.isFailure) {
-                        " — Impression : ${printResult.exceptionOrNull()?.message ?: "échec"}"
-                    } else {
-                        ""
-                    }
-                    _ui.update {
-                        it.copy(
-                            order = updated,
-                            isBusy = false,
-                            message = payMsg + printHint,
-                            error = if (printResult.isFailure) {
-                                printResult.exceptionOrNull()?.message
-                            } else {
-                                null
-                            },
-                            navigateToOpenOrders = fullyPaid,
-                        )
-                    }
-                } else {
-                    val fullyPaid = updated.status == OrderStatus.PAYEE
-                    _ui.update {
-                        it.copy(
-                            order = updated,
-                            isBusy = false,
-                            message = if (fullyPaid) "Commande payée" else "Paiement partiel enregistré",
-                            navigateToOpenOrders = fullyPaid,
-                        )
-                    }
+                val fullyPaid = updated.status == OrderStatus.PAYEE
+                _ui.update {
+                    it.copy(
+                        order = updated,
+                        isBusy = false,
+                        message = if (fullyPaid) "Commande payée" else "Paiement partiel enregistré",
+                        navigateToOpenOrders = fullyPaid,
+                    )
                 }
             } catch (e: Exception) {
                 _ui.update { it.copy(isBusy = false, error = e.message) }

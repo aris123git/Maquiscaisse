@@ -125,22 +125,29 @@ data class DashboardStats(
     val toCollect: Long,
     val costOfGoods: Long = 0L,
     val benefice: Long = 0L,
+    /** Dépenses de la période (déjà soustraites du CA et du bénéfice). */
+    val expensesTotal: Long = 0L,
     val topProducts: List<ProductSalesRow>,
     val topCategories: List<CategorySalesRow>,
     val waitressStats: List<WaitressStats>,
     val caisseDuJour: CaisseDuJour,
 ) {
+    /** Marge sur le CA ventes (avant dépenses). */
     val marginPercent: Int
-        get() = if (caGenerated <= 0L) 0
-        else ((benefice * 100L) / caGenerated).toInt()
+        get() {
+            val salesBase = caGenerated + expensesTotal
+            return if (salesBase <= 0L) 0
+            else ((benefice * 100L) / salesBase).toInt()
+        }
 }
 
-/** CA / bénéfice encaissés (orders PAYEE) pour un caissier. */
+/** CA / bénéfice encaissés (orders PAYEE, hors dette, − dépenses) pour un caissier. */
 data class CashierPeriodStats(
     val ca: Long,
     val costOfGoods: Long,
     val benefice: Long,
     val orderCount: Int,
+    val expensesTotal: Long = 0L,
 )
 
 /** Bilan financier du jour ventilé par mode de paiement + dettes + avoirs. */

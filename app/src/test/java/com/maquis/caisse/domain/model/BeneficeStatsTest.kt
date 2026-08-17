@@ -5,6 +5,32 @@ import org.junit.Test
 
 class BeneficeStatsTest {
     @Test
+    fun dashboardStats_expensesLowerCaAndBeneficeMargin() {
+        // Ventes 10 000, coût 4 000, dépenses 1 000 → CA 9 000, bénéfice 5 000, marge 50 % sur ventes
+        val stats = DashboardStats(
+            ordersToday = 2,
+            openOrders = 0,
+            caGenerated = 9_000L,
+            caCollected = 9_000L,
+            toCollect = 0L,
+            costOfGoods = 4_000L,
+            benefice = 5_000L,
+            expensesTotal = 1_000L,
+            topProducts = emptyList(),
+            topCategories = emptyList(),
+            waitressStats = emptyList(),
+            caisseDuJour = CaisseDuJour(
+                cashToday = 0L,
+                mobileToday = 0L,
+                debtToday = 0L,
+                avoirToday = 0L,
+            ),
+        )
+        assertEquals(5_000L, stats.benefice)
+        assertEquals(50, stats.marginPercent)
+    }
+
+    @Test
     fun dashboardStats_marginAndBenefice() {
         val stats = DashboardStats(
             ordersToday = 2,

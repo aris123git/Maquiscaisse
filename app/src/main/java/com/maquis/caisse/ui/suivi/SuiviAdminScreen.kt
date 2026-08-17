@@ -119,7 +119,6 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
                 ca = ui.ca,
                 benefice = ui.benefice,
                 expensesTotal = ui.expensesTotal,
-                beneficeNet = ui.beneficeNet,
                 onAddExpense = viewModel::openAddExpense,
             )
         }
@@ -224,25 +223,19 @@ private fun FinancialSummary(
     ca: Long,
     benefice: Long,
     expensesTotal: Long,
-    beneficeNet: Long,
     onAddExpense: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text("CA encaissé : ${MoneyFormat.format(ca)}", fontWeight = FontWeight.Bold)
+        Text("CA (après dépenses) : ${MoneyFormat.format(ca)}", fontWeight = FontWeight.Bold)
         Text(
-            "Bénéfice : ${MoneyFormat.format(benefice)}",
+            "Bénéfice (après dépenses) : ${MoneyFormat.format(benefice)}",
             fontWeight = FontWeight.Bold,
             color = GestionSuccess,
         )
         Text("Dépenses : ${MoneyFormat.format(expensesTotal)}", fontWeight = FontWeight.Bold)
-        Text(
-            "Bénéfice après dépenses : ${MoneyFormat.format(beneficeNet)}",
-            fontWeight = FontWeight.Bold,
-            color = GestionSuccess,
-        )
         Button(
             onClick = onAddExpense,
             modifier = Modifier.padding(top = 4.dp),

@@ -44,4 +44,11 @@ interface DetteDao {
     /** Somme des dettes créées dans la fenêtre [from, to]. */
     @Query("SELECT COALESCE(SUM(original_amount), 0) FROM dettes WHERE created_at BETWEEN :from AND :to")
     suspend fun totalCreatedBetween(from: Long, to: Long): Long
+
+    /** Remboursements de dettes encaissés dans [from, to]. */
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM dette_paiements WHERE paid_at BETWEEN :from AND :to")
+    suspend fun totalPaiementsBetween(from: Long, to: Long): Long
+
+    @Query("SELECT * FROM dette_paiements WHERE paid_at BETWEEN :from AND :to")
+    suspend fun listPaiementsBetween(from: Long, to: Long): List<DettePaiementEntity>
 }

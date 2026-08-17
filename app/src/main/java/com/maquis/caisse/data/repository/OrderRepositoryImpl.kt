@@ -13,6 +13,7 @@ import com.maquis.caisse.data.local.entity.OrderEntity
 import com.maquis.caisse.data.local.entity.OrderItemEntity
 import com.maquis.caisse.data.local.entity.OrderPaymentEntity
 import com.maquis.caisse.data.local.entity.StockMovementEntity
+import com.maquis.caisse.domain.finance.DebtAwareRevenue
 import com.maquis.caisse.domain.model.CaisseDuJour
 import com.maquis.caisse.domain.model.CashierPeriodStats
 import com.maquis.caisse.domain.model.CategorySalesRow
@@ -434,22 +435,30 @@ class OrderRepositoryImpl @Inject constructor(
             val orders = orderDao.listBetween(fromMs, toMs)
                 .filter { it.status != OrderStatus.ANNULEE.storageKey }
                 .filter { waitressId == null || it.waitressId == waitressId }
+            val paidOrders = orders.filter { it.status == OrderStatus.PAYEE.storageKey }
+            val debtByOrder = debtAmountsByOrder(paidOrders.map { it.id })
+            val repaymentsByWaitress = repaymentRevenueByWaitress(fromMs, toMs)
             orders.groupBy { it.waitressId to (it.waitressName ?: "Sans serveuse") }
                 .map { (key, list) ->
-                    val generated = list.sumOf { it.totalAmount }
-                    val collected = list.sumOf { it.paidAmount }
+                    val paid = list.filter { it.status == OrderStatus.PAYEE.storageKey }
+                    val debtSum = paid.sumOf { debtByOrder[it.id] ?: 0L }
+                    val generated = paid.sumOf { it.totalAmount } - debtSum +
+                        (repaymentsByWaitress[key.first] ?: 0L)
+                    val collected = paid.sumOf { it.paidAmount } - debtSum +
+                        (repaymentsByWaitress[key.first] ?: 0L)
                     WaitressStats(
                         waitressId = key.first,
                         waitressName = key.second,
                         orderCount = list.size,
-                        paidCount = list.count { it.status == OrderStatus.PAYEE.storageKey },
+                        paidCount = paid.size,
                         unpaidCount = list.count {
                             it.status == OrderStatus.NON_PAYEE.storageKey ||
                                 it.status == OrderStatus.EN_COURS.storageKey
                         },
-                        caGenerated = generated,
-                        caCollected = collected,
-                        toCollect = (generated - collected).coerceAtLeast(0L),
+                        caGenerated = generated.coerceAtLeast(0L),
+                        caCollected = collected.coerceAtLeast(0L),
+                        toCollect = (list.sumOf { it.totalAmount } - list.sumOf { it.paidAmount })
+                            .coerceAtLeast(0L),
                     )
                 }
                 .sortedByDescending { it.caGenerated }
@@ -458,25 +467,30 @@ class OrderRepositoryImpl @Inject constructor(
     override suspend fun categorySales(fromMs: Long, toMs: Long, waitressId: Long?): List<CategorySalesRow> =
         withContext(Dispatchers.IO) {
             val orders = orderDao.listBetween(fromMs, toMs)
-                .filter { it.status != OrderStatus.ANNULEE.storageKey }
+                .filter { it.status == OrderStatus.PAYEE.storageKey }
                 .filter { waitressId == null || it.waitressId == waitressId }
+            val debtByOrder = debtAmountsByOrder(orders.map { it.id })
             val costCache = mutableMapOf<Long, Long>()
-            data class Acc(val qty: Int, val revenue: Long, val cost: Long)
-            val rows = mutableMapOf<String, Acc>()
+            val rows = mutableMapOf<String, AccQtyRevCost>()
             orders.forEach { order ->
+                val fraction = DebtAwareRevenue.recognizedFraction(
+                    order.totalAmount,
+                    debtByOrder[order.id] ?: 0L,
+                )
                 orderDao.getItems(order.id).forEach { item ->
                     val key = item.categoryName.ifBlank { "Divers" }
                     val unitCost = costCache.getOrPut(item.productId) {
                         productDao.getById(item.productId)?.purchasePrice?.coerceAtLeast(0L) ?: 0L
                     }
-                    val prev = rows[key] ?: Acc(0, 0L, 0L)
-                    rows[key] = Acc(
+                    val prev = rows[key] ?: AccQtyRevCost(0, 0L, 0L)
+                    rows[key] = AccQtyRevCost(
                         qty = prev.qty + item.quantity,
-                        revenue = prev.revenue + item.lineTotal,
-                        cost = prev.cost + unitCost * item.quantity,
+                        revenue = prev.revenue + DebtAwareRevenue.scale(item.lineTotal, fraction),
+                        cost = prev.cost + DebtAwareRevenue.scale(unitCost * item.quantity, fraction),
                     )
                 }
             }
+            addRepaymentSalesToCategories(rows, fromMs, toMs, waitressId, costCache)
             rows.map { (name, v) -> CategorySalesRow(name, v.qty, v.revenue, v.cost) }
                 .sortedByDescending { it.revenue }
         }
@@ -484,11 +498,16 @@ class OrderRepositoryImpl @Inject constructor(
     override suspend fun productSales(fromMs: Long, toMs: Long, waitressId: Long?): List<ProductSalesRow> =
         withContext(Dispatchers.IO) {
             val orders = orderDao.listBetween(fromMs, toMs)
-                .filter { it.status != OrderStatus.ANNULEE.storageKey }
+                .filter { it.status == OrderStatus.PAYEE.storageKey }
                 .filter { waitressId == null || it.waitressId == waitressId }
+            val debtByOrder = debtAmountsByOrder(orders.map { it.id })
             val costCache = mutableMapOf<Long, Long>()
             val rows = mutableMapOf<String, ProductSalesRow>()
             orders.forEach { order ->
+                val fraction = DebtAwareRevenue.recognizedFraction(
+                    order.totalAmount,
+                    debtByOrder[order.id] ?: 0L,
+                )
                 orderDao.getItems(order.id).forEach { item ->
                     val key = item.productName
                     val unitCost = costCache.getOrPut(item.productId) {
@@ -500,11 +519,12 @@ class OrderRepositoryImpl @Inject constructor(
                         productName = item.productName,
                         categoryName = item.categoryName.ifBlank { "Divers" },
                         quantity = (prev?.quantity ?: 0) + item.quantity,
-                        revenue = (prev?.revenue ?: 0L) + item.lineTotal,
-                        cost = (prev?.cost ?: 0L) + lineCost,
+                        revenue = (prev?.revenue ?: 0L) + DebtAwareRevenue.scale(item.lineTotal, fraction),
+                        cost = (prev?.cost ?: 0L) + DebtAwareRevenue.scale(lineCost, fraction),
                     )
                 }
             }
+            addRepaymentSalesToProducts(rows, fromMs, toMs, waitressId, costCache)
             rows.values.sortedByDescending { it.revenue }
         }
 
@@ -512,16 +532,21 @@ class OrderRepositoryImpl @Inject constructor(
         withContext(Dispatchers.IO) {
             val orders = orderDao.listBetween(fromMs, toMs)
                 .filter { it.status != OrderStatus.ANNULEE.storageKey }
+            val paidOrders = orders.filter { it.status == OrderStatus.PAYEE.storageKey }
             val open = orders.count {
                 it.status == OrderStatus.EN_COURS.storageKey ||
                     it.status == OrderStatus.NON_PAYEE.storageKey
             }
-            val generated = orders.sumOf { it.totalAmount }
-            val collected = orders.sumOf { it.paidAmount }
+            val debtByOrder = debtAmountsByOrder(paidOrders.map { it.id })
+            val debtOnOrders = debtByOrder.values.sum()
+            val repaymentRevenue = detteDao.totalPaiementsBetween(fromMs, toMs)
+            val expensesTotal = db.expenseDao().totalBetween(fromMs, toMs)
+
+            val salesCa = paidOrders.sumOf { it.totalAmount } - debtOnOrders + repaymentRevenue
+            val salesCollected = paidOrders.sumOf { it.paidAmount } - debtOnOrders + repaymentRevenue
             val products = productSales(fromMs, toMs, null)
             val cost = products.sumOf { it.cost }
 
-            // Ventilation paiements du jour par mode
             val cashToday = orderDao.totalPaymentsByMode("CASH", fromMs, toMs)
             val mobileModes = listOf(
                 "ORANGE_MONEY", "MOOV_MONEY", "WAVE", "CARD", "OTHER",
@@ -531,7 +556,6 @@ class OrderRepositoryImpl @Inject constructor(
             val debtToday = detteDao.totalCreatedBetween(fromMs, toMs)
             val avoirToday = db.avoirDao().totalBetween(fromMs, toMs)
 
-            // Écart fond de caisse si une session est ouverte
             val openSession = db.caisseSessionDao().getOpenSession()
             val fondDeCaisse: Long?
             val espècesThéoriques: Long?
@@ -551,16 +575,18 @@ class OrderRepositoryImpl @Inject constructor(
             DashboardStats(
                 ordersToday = orders.size,
                 openOrders = open,
-                caGenerated = generated,
-                caCollected = collected,
-                toCollect = (generated - collected).coerceAtLeast(0L),
+                caGenerated = salesCa - expensesTotal,
+                caCollected = salesCollected - expensesTotal,
+                toCollect = (orders.sumOf { it.totalAmount } - orders.sumOf { it.paidAmount })
+                    .coerceAtLeast(0L),
                 costOfGoods = cost,
-                benefice = generated - cost,
+                benefice = salesCa - cost - expensesTotal,
+                expensesTotal = expensesTotal,
                 topProducts = products.take(5),
                 topCategories = categorySales(fromMs, toMs, null).take(5),
                 waitressStats = waitressStats(fromMs, toMs, null),
                 caisseDuJour = CaisseDuJour(
-                    cashToday = cashToday,
+                    cashToday = cashToday + repaymentRevenue,
                     mobileToday = mobileToday,
                     debtToday = debtToday,
                     avoirToday = avoirToday,
@@ -583,25 +609,159 @@ class OrderRepositoryImpl @Inject constructor(
         cashierId: Long?,
     ): CashierPeriodStats = withContext(Dispatchers.IO) {
         val orders = orderDao.listByCashierBetween(fromMs, toMs, cashierId)
+        val debtByOrder = debtAmountsByOrder(orders.map { it.id })
         val costCache = mutableMapOf<Long, Long>()
-        var ca = 0L
+        var salesCa = 0L
         var cost = 0L
         orders.forEach { order ->
+            val fraction = DebtAwareRevenue.recognizedFraction(
+                order.totalAmount,
+                debtByOrder[order.id] ?: 0L,
+            )
             orderDao.getItems(order.id).forEach { item ->
-                ca += item.lineTotal
+                salesCa += DebtAwareRevenue.scale(item.lineTotal, fraction)
                 val unit = costCache.getOrPut(item.productId) {
                     productDao.getById(item.productId)?.purchasePrice?.coerceAtLeast(0L) ?: 0L
                 }
-                cost += unit * item.quantity
+                cost += DebtAwareRevenue.scale(unit * item.quantity, fraction)
             }
         }
+        val repay = repaymentRevenueAndCost(fromMs, toMs, cashierId)
+        salesCa += repay.first
+        cost += repay.second
+        val expensesTotal = if (cashierId != null) {
+            db.expenseDao().totalByUserAndDateRange(cashierId, fromMs, toMs)
+        } else {
+            db.expenseDao().totalBetween(fromMs, toMs)
+        }
         CashierPeriodStats(
-            ca = ca,
+            ca = salesCa - expensesTotal,
             costOfGoods = cost,
-            benefice = ca - cost,
+            benefice = salesCa - cost - expensesTotal,
             orderCount = orders.size,
+            expensesTotal = expensesTotal,
         )
     }
+
+    private suspend fun debtAmountsByOrder(orderIds: List<Long>): Map<Long, Long> {
+        if (orderIds.isEmpty()) return emptyMap()
+        return orderDao.debtTotalsForOrders(orderIds).associate { it.orderId to it.total }
+    }
+
+    /** CA remboursements groupés par serveuse de la commande liée (null = sans commande). */
+    private suspend fun repaymentRevenueByWaitress(
+        fromMs: Long,
+        toMs: Long,
+    ): Map<Long?, Long> {
+        val result = mutableMapOf<Long?, Long>()
+        detteDao.listPaiementsBetween(fromMs, toMs).forEach { p ->
+            val dette = detteDao.getById(p.detteId) ?: return@forEach
+            val waitressId = dette.orderId?.let { orderDao.getById(it)?.waitressId }
+            result[waitressId] = (result[waitressId] ?: 0L) + p.amount
+        }
+        return result
+    }
+
+    /**
+     * @return Pair(revenue, cost) des remboursements de dettes dans la fenêtre.
+     * Si [cashierId] non null, ne compte que les dettes liées à une commande de ce caissier
+     * (ou créées par lui si pas de commande).
+     */
+    private suspend fun repaymentRevenueAndCost(
+        fromMs: Long,
+        toMs: Long,
+        cashierId: Long?,
+    ): Pair<Long, Long> {
+        var revenue = 0L
+        var cost = 0L
+        val costCache = mutableMapOf<Long, Long>()
+        detteDao.listPaiementsBetween(fromMs, toMs).forEach { p ->
+            val dette = detteDao.getById(p.detteId) ?: return@forEach
+            if (cashierId != null) {
+                val order = dette.orderId?.let { orderDao.getById(it) }
+                val matches = when {
+                    order != null -> order.createdByUserId == cashierId
+                    else -> dette.userId == cashierId
+                }
+                if (!matches) return@forEach
+            }
+            revenue += p.amount
+            val order = dette.orderId?.let { orderDao.getById(it) } ?: return@forEach
+            if (order.totalAmount <= 0L) return@forEach
+            val orderCost = orderDao.getItems(order.id).sumOf { item ->
+                val unit = costCache.getOrPut(item.productId) {
+                    productDao.getById(item.productId)?.purchasePrice?.coerceAtLeast(0L) ?: 0L
+                }
+                unit * item.quantity
+            }
+            cost += DebtAwareRevenue.scale(
+                orderCost,
+                p.amount.toDouble() / order.totalAmount.toDouble(),
+            )
+        }
+        return revenue to cost
+    }
+
+    private suspend fun addRepaymentSalesToProducts(
+        rows: MutableMap<String, ProductSalesRow>,
+        fromMs: Long,
+        toMs: Long,
+        waitressId: Long?,
+        costCache: MutableMap<Long, Long>,
+    ) {
+        detteDao.listPaiementsBetween(fromMs, toMs).forEach { p ->
+            val dette = detteDao.getById(p.detteId) ?: return@forEach
+            val order = dette.orderId?.let { orderDao.getById(it) } ?: return@forEach
+            if (waitressId != null && order.waitressId != waitressId) return@forEach
+            if (order.totalAmount <= 0L) return@forEach
+            val fraction = p.amount.toDouble() / order.totalAmount.toDouble()
+            orderDao.getItems(order.id).forEach { item ->
+                val unitCost = costCache.getOrPut(item.productId) {
+                    productDao.getById(item.productId)?.purchasePrice?.coerceAtLeast(0L) ?: 0L
+                }
+                val key = item.productName
+                val prev = rows[key]
+                rows[key] = ProductSalesRow(
+                    productName = item.productName,
+                    categoryName = item.categoryName.ifBlank { "Divers" },
+                    quantity = prev?.quantity ?: 0,
+                    revenue = (prev?.revenue ?: 0L) + DebtAwareRevenue.scale(item.lineTotal, fraction),
+                    cost = (prev?.cost ?: 0L) +
+                        DebtAwareRevenue.scale(unitCost * item.quantity, fraction),
+                )
+            }
+        }
+    }
+
+    private suspend fun addRepaymentSalesToCategories(
+        rows: MutableMap<String, AccQtyRevCost>,
+        fromMs: Long,
+        toMs: Long,
+        waitressId: Long?,
+        costCache: MutableMap<Long, Long>,
+    ) {
+        detteDao.listPaiementsBetween(fromMs, toMs).forEach { p ->
+            val dette = detteDao.getById(p.detteId) ?: return@forEach
+            val order = dette.orderId?.let { orderDao.getById(it) } ?: return@forEach
+            if (waitressId != null && order.waitressId != waitressId) return@forEach
+            if (order.totalAmount <= 0L) return@forEach
+            val fraction = p.amount.toDouble() / order.totalAmount.toDouble()
+            orderDao.getItems(order.id).forEach { item ->
+                val key = item.categoryName.ifBlank { "Divers" }
+                val unitCost = costCache.getOrPut(item.productId) {
+                    productDao.getById(item.productId)?.purchasePrice?.coerceAtLeast(0L) ?: 0L
+                }
+                val prev = rows[key] ?: AccQtyRevCost(0, 0L, 0L)
+                rows[key] = AccQtyRevCost(
+                    qty = prev.qty,
+                    revenue = prev.revenue + DebtAwareRevenue.scale(item.lineTotal, fraction),
+                    cost = prev.cost + DebtAwareRevenue.scale(unitCost * item.quantity, fraction),
+                )
+            }
+        }
+    }
+
+    private data class AccQtyRevCost(val qty: Int, val revenue: Long, val cost: Long)
 
     private fun OrderEntity.toSummary() = Order(
         id = id,

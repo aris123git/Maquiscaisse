@@ -191,35 +191,66 @@ class EscPosPrinter @Inject constructor(
 
     private fun writeEscPos(out: OutputStream, lines: List<String>, codepage: Int) {
         out.write(byteArrayOf(0x1B, 0x40)) // ESC @ — init / reset imprimante
-        // ESC t n — sélectionne la page de codes.
-        // codepage 0  = PC437 (défaut occidental, corrige les caractères chinois sur SPT-II)
-        // codepage 16 = WPC1252
-        // codepage -1 = ne pas envoyer de commande (legacy)
+        // FS . — quitte le mode Kanji (sinon les octets latins sortent en glyphes chinois)
+        out.write(byteArrayOf(0x1C, 0x2E))
+        // ESC t n — page de codes (0=PC437, 16=WPC1252, -1=ne pas envoyer)
         if (codepage >= 0) {
             out.write(byteArrayOf(0x1B, 0x74, codepage.toByte()))
         }
         lines.forEach { rawLine ->
-            // Normaliser les espaces insécables (U+00A0 et U+202F) et fullwidth digits
-            val safeLine = rawLine
-                .replace('\u00A0', ' ')
-                .replace('\u202F', ' ')
-                .map { c ->
-                    if (c in '\uFF10'..'\uFF19') {
-                        ('0' + (c - '\uFF10')).toChar()
-                    } else c
-                }.joinToString("")
-
-            val bytes = try {
-                safeLine.toByteArray(Charset.forName("ISO-8859-1"))
-            } catch (e: Exception) {
-                safeLine.toByteArray(Charsets.UTF_8)
-            }
-            out.write(bytes)
+            // ASCII-safe : accents FR -> ASCII (évite PC437/ISO mismatch et mode Kanji)
+            val safeLine = asciiForPrinter(rawLine)
+            out.write(safeLine.toByteArray(Charsets.US_ASCII))
             out.write(byteArrayOf(0x0A))
         }
         out.write(byteArrayOf(0x0A, 0x0A, 0x0A))
         out.write(byteArrayOf(0x1D, 0x56, 0x00)) // GS V 0 — coupe papier
         out.flush()
+    }
+
+    /**
+     * Translittération ASCII pour tickets thermiques cheap (souvent bloqués en Kanji/GBK).
+     * Les accents français deviennent des lettres ASCII ; le reste hors 0x20-0x7E est '?'.
+     */
+    internal fun asciiForPrinter(text: String): String {
+        val sb = StringBuilder(text.length)
+        for (c in text) {
+            when (c) {
+                '\u00A0', '\u202F' -> sb.append(' ')
+                in '\uFF10'..'\uFF19' -> sb.append(('0' + (c - '\uFF10')))
+                'à', 'á', 'â', 'ä', 'ã', 'å', 'ā' -> sb.append('a')
+                'À', 'Á', 'Â', 'Ä', 'Ã', 'Å', 'Ā' -> sb.append('A')
+                'è', 'é', 'ê', 'ë', 'ē' -> sb.append('e')
+                'È', 'É', 'Ê', 'Ë', 'Ē' -> sb.append('E')
+                'ì', 'í', 'î', 'ï', 'ī' -> sb.append('i')
+                'Ì', 'Í', 'Î', 'Ï', 'Ī' -> sb.append('I')
+                'ò', 'ó', 'ô', 'ö', 'õ', 'ō' -> sb.append('o')
+                'Ò', 'Ó', 'Ô', 'Ö', 'Õ', 'Ō' -> sb.append('O')
+                'ù', 'ú', 'û', 'ü', 'ū' -> sb.append('u')
+                'Ù', 'Ú', 'Û', 'Ü', 'Ū' -> sb.append('U')
+                'ý', 'ÿ' -> sb.append('y')
+                'Ý', 'Ÿ' -> sb.append('Y')
+                'ç' -> sb.append('c')
+                'Ç' -> sb.append('C')
+                'ñ' -> sb.append('n')
+                'Ñ' -> sb.append('N')
+                'œ' -> sb.append("oe")
+                'Œ' -> sb.append("OE")
+                'æ' -> sb.append("ae")
+                'Æ' -> sb.append("AE")
+                '€' -> sb.append("EUR")
+                '’', '‘', '‚', '`' -> sb.append('\'')
+                '“', '”', '«', '»' -> sb.append('"')
+                '–', '—', '−' -> sb.append('-')
+                '…' -> sb.append("...")
+                else -> {
+                    if (c.code in 0x20..0x7E) sb.append(c)
+                    else if (c == '\t') sb.append(' ')
+                    else sb.append('?')
+                }
+            }
+        }
+        return sb.toString()
     }
 
     private suspend fun buildSessionClosureTicket(session: CaisseSession): List<String> {

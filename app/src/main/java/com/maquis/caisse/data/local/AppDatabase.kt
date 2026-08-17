@@ -8,6 +8,7 @@ import com.maquis.caisse.data.local.dao.CaisseSessionDao
 import com.maquis.caisse.data.local.dao.CategoryDao
 import com.maquis.caisse.data.local.dao.DetteDao
 import com.maquis.caisse.data.local.dao.DiningTableDao
+import com.maquis.caisse.data.local.dao.ExpenseDao
 import com.maquis.caisse.data.local.dao.OrderDao
 import com.maquis.caisse.data.local.dao.ProductDao
 import com.maquis.caisse.data.local.dao.SaleDao
@@ -22,6 +23,7 @@ import com.maquis.caisse.data.local.entity.CategoryEntity
 import com.maquis.caisse.data.local.entity.DetteEntity
 import com.maquis.caisse.data.local.entity.DettePaiementEntity
 import com.maquis.caisse.data.local.entity.DiningTableEntity
+import com.maquis.caisse.data.local.entity.ExpenseEntity
 import com.maquis.caisse.data.local.entity.OrderEntity
 import com.maquis.caisse.data.local.entity.OrderItemEntity
 import com.maquis.caisse.data.local.entity.OrderPaymentEntity
@@ -32,11 +34,12 @@ import com.maquis.caisse.data.local.entity.StockMovementEntity
 import com.maquis.caisse.data.local.entity.UserEntity
 
 /**
- * Schéma Room courant : **version 6**.
+ * Schéma Room courant : **version 7**.
  *
- * - v4 : catalogue + commandes (hash `bb32ee3ed71c855b25dea2adb01bf476`)
- * - v5 : + `caisse_sessions` basique (hash sauvegardes Replit `d8605a15…`)
- * - v6 : + colonnes financières session + `dettes` / `dette_paiements` / `avoirs`
+ * - v4 : catalogue + commandes
+ * - v5 : + `caisse_sessions`
+ * - v6 : + colonnes session + dettes/avoirs
+ * - v7 : + `expenses` (dépenses)
  */
 @Database(
     entities = [
@@ -56,8 +59,9 @@ import com.maquis.caisse.data.local.entity.UserEntity
         DetteEntity::class,
         DettePaiementEntity::class,
         AvoirEntity::class,
+        ExpenseEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -73,4 +77,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun caisseSessionDao(): CaisseSessionDao
     abstract fun detteDao(): DetteDao
     abstract fun avoirDao(): AvoirDao
+    abstract fun expenseDao(): ExpenseDao
 }

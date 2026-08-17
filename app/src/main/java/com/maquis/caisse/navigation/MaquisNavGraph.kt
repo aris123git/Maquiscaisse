@@ -17,6 +17,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.ui.assistant.AssistantScreen
 import com.maquis.caisse.ui.caisse.CaisseScreen
 import com.maquis.caisse.ui.categories.CategoriesScreen
@@ -30,6 +31,7 @@ import com.maquis.caisse.ui.parametres.ParametresScreen
 import com.maquis.caisse.ui.produits.ProduitsScreen
 import com.maquis.caisse.ui.rapports.RapportsScreen
 import com.maquis.caisse.ui.stock.StockScreen
+import com.maquis.caisse.ui.suivi.SuiviAdminScreen
 import com.maquis.caisse.ui.tables.TablesScreen
 import com.maquis.caisse.ui.users.UsersScreen
 
@@ -38,6 +40,7 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
     val sideBarVm: SideBarViewModel = hiltViewModel()
     val currentUser by sideBarVm.currentUser.collectAsStateWithLifecycle()
     val isAdmin = currentUser?.role == "ADMIN"
+    val canViewReports = isAdmin || currentUser?.can(Permissions.VIEW_REPORTS) == true
 
     Scaffold(containerColor = Color.Transparent) { padding ->
         Row(
@@ -104,6 +107,11 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
                 }
                 composable(Routes.STOCK) { StockScreen() }
                 composable(Routes.RAPPORTS) { RapportsScreen() }
+                composable(Routes.SUIVI_ADMIN) {
+                    ReportsAccessRoute(allowed = canViewReports, navController = navController) {
+                        SuiviAdminScreen()
+                    }
+                }
                 composable(Routes.UTILISATEURS) {
                     AdminOnlyRoute(isAdmin = isAdmin, navController = navController) {
                         UsersScreen()
@@ -122,6 +130,24 @@ private fun AdminOnlyRoute(
     content: @Composable () -> Unit,
 ) {
     if (!isAdmin) {
+        LaunchedEffect(Unit) {
+            navController.navigate(Routes.CAISSE) {
+                popUpTo(Routes.CAISSE) { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    } else {
+        content()
+    }
+}
+
+@Composable
+private fun ReportsAccessRoute(
+    allowed: Boolean,
+    navController: NavHostController,
+    content: @Composable () -> Unit,
+) {
+    if (!allowed) {
         LaunchedEffect(Unit) {
             navController.navigate(Routes.CAISSE) {
                 popUpTo(Routes.CAISSE) { inclusive = false }

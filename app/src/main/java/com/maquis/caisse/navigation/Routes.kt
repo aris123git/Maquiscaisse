@@ -11,6 +11,7 @@ object Routes {
     const val DASHBOARD = "dashboard"
     const val ASSISTANT = "assistant"
     const val RAPPORTS = "rapports"
+    const val SUIVI_ADMIN = "suivi_admin"
     const val UTILISATEURS = "utilisateurs"
     const val PARAMETRES = "parametres"
     const val AVOIRS = "avoirs"

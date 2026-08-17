@@ -1,6 +1,7 @@
 package com.maquis.caisse.di
 
 import com.maquis.caisse.data.repository.CategoryRepositoryImpl
+import com.maquis.caisse.data.repository.ExpenseRepositoryImpl
 import com.maquis.caisse.data.repository.OrderRepositoryImpl
 import com.maquis.caisse.data.repository.ProductRepositoryImpl
 import com.maquis.caisse.data.repository.SaleRepositoryImpl
@@ -9,6 +10,7 @@ import com.maquis.caisse.data.repository.StockRepositoryImpl
 import com.maquis.caisse.data.repository.TableRepositoryImpl
 import com.maquis.caisse.data.repository.UserRepositoryImpl
 import com.maquis.caisse.domain.repository.CategoryRepository
+import com.maquis.caisse.domain.repository.ExpenseRepository
 import com.maquis.caisse.domain.repository.OrderRepository
 import com.maquis.caisse.domain.repository.ProductRepository
 import com.maquis.caisse.domain.repository.SaleRepository
@@ -49,4 +51,7 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindSettingsRepository(impl: SettingsRepositoryImpl): SettingsRepository
+
+    @Binds @Singleton
+    abstract fun bindExpenseRepository(impl: ExpenseRepositoryImpl): ExpenseRepository
 }

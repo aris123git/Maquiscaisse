@@ -339,4 +339,26 @@ object Migrations {
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_avoirs_order_id` ON `avoirs` (`order_id`)")
         }
     }
+
+    /** Dépenses (suivi admin). */
+    val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `expenses` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `description` TEXT NOT NULL,
+                    `amount` INTEGER NOT NULL,
+                    `category` TEXT,
+                    `user_id` INTEGER,
+                    `user_name` TEXT NOT NULL,
+                    `created_at` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_expenses_created_at` ON `expenses` (`created_at`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_expenses_user_id` ON `expenses` (`user_id`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_expenses_category` ON `expenses` (`category`)")
+        }
+    }
 }

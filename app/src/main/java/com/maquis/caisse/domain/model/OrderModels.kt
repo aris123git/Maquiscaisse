@@ -123,6 +123,14 @@ data class DashboardStats(
     val caisseDuJour: CaisseDuJour,
 )
 
+/** CA / bénéfice encaissés (orders PAYEE) pour un caissier. */
+data class CashierPeriodStats(
+    val ca: Long,
+    val costOfGoods: Long,
+    val benefice: Long,
+    val orderCount: Int,
+)
+
 /** Bilan financier du jour ventilé par mode de paiement + dettes + avoirs. */
 data class BilanJourStats(
     val cashSales: Long = 0L,

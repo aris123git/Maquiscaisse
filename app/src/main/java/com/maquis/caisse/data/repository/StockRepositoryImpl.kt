@@ -27,6 +27,20 @@ class StockRepositoryImpl @Inject constructor(
     override fun observeMovements(limit: Int): Flow<List<StockMovement>> =
         movementDao.observeRecent(limit).map { list -> list.map { it.toDomain() } }
 
+    override suspend fun listMovementsByType(
+        type: String,
+        fromMs: Long,
+        toMs: Long,
+        userId: Long?,
+    ): List<StockMovement> = withContext(Dispatchers.IO) {
+        val rows = if (userId != null) {
+            movementDao.listByTypeUserAndRange(type, userId, fromMs, toMs)
+        } else {
+            movementDao.listByTypeAndRange(type, fromMs, toMs)
+        }
+        rows.map { it.toDomain() }
+    }
+
     override suspend fun adjust(
         productId: Long,
         type: String,
@@ -93,6 +107,7 @@ class StockRepositoryImpl @Inject constructor(
         motif = motif,
         supplier = supplier,
         comment = comment,
+        userId = userId,
         userName = userName,
         createdAtEpochMs = createdAt,
     )

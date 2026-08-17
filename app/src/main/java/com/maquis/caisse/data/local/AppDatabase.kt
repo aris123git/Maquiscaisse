@@ -8,6 +8,7 @@ import com.maquis.caisse.data.local.dao.CaisseSessionDao
 import com.maquis.caisse.data.local.dao.CategoryDao
 import com.maquis.caisse.data.local.dao.DetteDao
 import com.maquis.caisse.data.local.dao.DiningTableDao
+import com.maquis.caisse.data.local.dao.ExpenseDao
 import com.maquis.caisse.data.local.dao.OrderDao
 import com.maquis.caisse.data.local.dao.ProductDao
 import com.maquis.caisse.data.local.dao.SaleDao
@@ -22,6 +23,7 @@ import com.maquis.caisse.data.local.entity.CategoryEntity
 import com.maquis.caisse.data.local.entity.DettePaiementEntity
 import com.maquis.caisse.data.local.entity.DetteEntity
 import com.maquis.caisse.data.local.entity.DiningTableEntity
+import com.maquis.caisse.data.local.entity.ExpenseEntity
 import com.maquis.caisse.data.local.entity.OrderEntity
 import com.maquis.caisse.data.local.entity.OrderItemEntity
 import com.maquis.caisse.data.local.entity.OrderPaymentEntity
@@ -31,6 +33,11 @@ import com.maquis.caisse.data.local.entity.SaleItemEntity
 import com.maquis.caisse.data.local.entity.StockMovementEntity
 import com.maquis.caisse.data.local.entity.UserEntity
 
+/**
+ * Schéma Room courant : **version 7**.
+ * - v6 : sessions + dettes/avoirs
+ * - v7 : + `expenses`
+ */
 @Database(
     entities = [
         ProductEntity::class,
@@ -49,8 +56,9 @@ import com.maquis.caisse.data.local.entity.UserEntity
         DetteEntity::class,
         DettePaiementEntity::class,
         AvoirEntity::class,
+        ExpenseEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -66,4 +74,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun caisseSessionDao(): CaisseSessionDao
     abstract fun detteDao(): DetteDao
     abstract fun avoirDao(): AvoirDao
+    abstract fun expenseDao(): ExpenseDao
 }

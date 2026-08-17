@@ -10,6 +10,7 @@ import com.maquis.caisse.data.local.dao.CaisseSessionDao
 import com.maquis.caisse.data.local.dao.CategoryDao
 import com.maquis.caisse.data.local.dao.DetteDao
 import com.maquis.caisse.data.local.dao.DiningTableDao
+import com.maquis.caisse.data.local.dao.ExpenseDao
 import com.maquis.caisse.data.local.dao.OrderDao
 import com.maquis.caisse.data.local.dao.ProductDao
 import com.maquis.caisse.data.local.dao.SaleDao
@@ -38,6 +39,7 @@ object DatabaseModule {
                 Migrations.MIGRATION_3_4,
                 Migrations.MIGRATION_4_5,
                 Migrations.MIGRATION_5_6,
+                Migrations.MIGRATION_6_7,
             )
             .build()
     }
@@ -54,4 +56,5 @@ object DatabaseModule {
     @Provides fun provideCaisseSessionDao(db: AppDatabase): CaisseSessionDao = db.caisseSessionDao()
     @Provides fun provideDetteDao(db: AppDatabase): DetteDao = db.detteDao()
     @Provides fun provideAvoirDao(db: AppDatabase): AvoirDao = db.avoirDao()
+    @Provides fun provideExpenseDao(db: AppDatabase): ExpenseDao = db.expenseDao()
 }

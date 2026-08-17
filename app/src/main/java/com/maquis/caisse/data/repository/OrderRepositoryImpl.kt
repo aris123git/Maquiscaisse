@@ -14,6 +14,7 @@ import com.maquis.caisse.data.local.entity.OrderItemEntity
 import com.maquis.caisse.data.local.entity.OrderPaymentEntity
 import com.maquis.caisse.data.local.entity.StockMovementEntity
 import com.maquis.caisse.domain.model.CaisseDuJour
+import com.maquis.caisse.domain.model.CashierPeriodStats
 import com.maquis.caisse.domain.model.CategorySalesRow
 import com.maquis.caisse.domain.model.CreateOrderRequest
 import com.maquis.caisse.domain.model.DashboardStats
@@ -556,6 +557,32 @@ class OrderRepositoryImpl @Inject constructor(
             orderDao.paymentModeBreakdown(fromMs, toMs)
                 .associate { it.paymentMode to it.total }
         }
+
+    override suspend fun cashierPeriodStats(
+        fromMs: Long,
+        toMs: Long,
+        cashierId: Long?,
+    ): CashierPeriodStats = withContext(Dispatchers.IO) {
+        val orders = orderDao.listByCashierBetween(fromMs, toMs, cashierId)
+        val costCache = mutableMapOf<Long, Long>()
+        var ca = 0L
+        var cost = 0L
+        orders.forEach { order ->
+            orderDao.getItems(order.id).forEach { item ->
+                ca += item.lineTotal
+                val unit = costCache.getOrPut(item.productId) {
+                    productDao.getById(item.productId)?.purchasePrice?.coerceAtLeast(0L) ?: 0L
+                }
+                cost += unit * item.quantity
+            }
+        }
+        CashierPeriodStats(
+            ca = ca,
+            costOfGoods = cost,
+            benefice = ca - cost,
+            orderCount = orders.size,
+        )
+    }
 
     private fun OrderEntity.toSummary() = Order(
         id = id,

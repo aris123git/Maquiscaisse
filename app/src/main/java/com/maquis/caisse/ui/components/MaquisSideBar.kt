@@ -94,6 +94,7 @@ fun MaquisSideBar(
         NavItem(Routes.CATEGORIES, "Catégories"),
         NavItem(Routes.TABLES, "Tables"),
         NavItem(Routes.STOCK, "Stock"),
+        NavItem(Routes.MOUVEMENTS, "Mouvements"),
         NavItem(Routes.RAPPORTS, "Rapports"),
         NavItem(Routes.UTILISATEURS, "Utilisateurs", adminOnly = true),
         NavItem(Routes.PARAMETRES, "Paramètres"),

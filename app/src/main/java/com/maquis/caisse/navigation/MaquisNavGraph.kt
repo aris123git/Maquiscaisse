@@ -31,6 +31,7 @@ import com.maquis.caisse.ui.parametres.ParametresScreen
 import com.maquis.caisse.ui.produits.ProduitsScreen
 import com.maquis.caisse.ui.rapports.RapportsScreen
 import com.maquis.caisse.ui.stock.StockScreen
+import com.maquis.caisse.ui.suivi.SuiviAdminScreen
 import com.maquis.caisse.ui.tables.TablesScreen
 import com.maquis.caisse.ui.users.UsersScreen
 
@@ -92,6 +93,7 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
                 composable(Routes.CATEGORIES) { CategoriesScreen() }
                 composable(Routes.TABLES) { TablesScreen() }
                 composable(Routes.STOCK) { StockScreen() }
+                composable(Routes.MOUVEMENTS) { SuiviAdminScreen() }
                 composable(Routes.RAPPORTS) { RapportsScreen() }
                 composable(Routes.UTILISATEURS) {
                     if (!isAdmin) {

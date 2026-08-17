@@ -22,4 +22,34 @@ interface StockMovementDao {
         """,
     )
     fun observeForProduct(productId: Long): Flow<List<StockMovementEntity>>
+
+    @Query(
+        """
+        SELECT * FROM stock_movements
+        WHERE type = :type
+          AND user_id = :userId
+          AND created_at BETWEEN :start AND :end
+        ORDER BY created_at ASC
+        """,
+    )
+    suspend fun listByTypeUserAndRange(
+        type: String,
+        userId: Long,
+        start: Long,
+        end: Long,
+    ): List<StockMovementEntity>
+
+    @Query(
+        """
+        SELECT * FROM stock_movements
+        WHERE type = :type
+          AND created_at BETWEEN :start AND :end
+        ORDER BY created_at ASC
+        """,
+    )
+    suspend fun listByTypeAndRange(
+        type: String,
+        start: Long,
+        end: Long,
+    ): List<StockMovementEntity>
 }

@@ -113,13 +113,27 @@ class EscPosPrinter @Inject constructor(
                     } catch (e: Exception) {
                         // essayer une socket insecure si disponible
                         try {
+                            runCatching { adapter.cancelDiscovery() }
                             val insecure = device.createInsecureRfcommSocketToServiceRecord(sppUuid)
                             insecure.connect()
                             socket = insecure
                             triedInsecure = true
                         } catch (e2: Exception) {
-                            // Si échec, relancer l'exception pour le retry
-                            throw e2
+                            // Dernier recours : RFCOMM canal 1 (imprimantes cheap / tablettes)
+                            try {
+                                runCatching { adapter.cancelDiscovery() }
+                                runCatching { socket?.close() }
+                                val method = device.javaClass.getMethod(
+                                    "createRfcommSocket",
+                                    Int::class.javaPrimitiveType,
+                                )
+                                @Suppress("UNCHECKED_CAST")
+                                val channel1 = method.invoke(device, 1) as BluetoothSocket
+                                channel1.connect()
+                                socket = channel1
+                            } catch (e3: Exception) {
+                                throw e3
+                            }
                         }
                     }
 

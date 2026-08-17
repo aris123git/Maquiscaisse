@@ -435,20 +435,22 @@ class OrderRepositoryImpl @Inject constructor(
             val orders = orderDao.listBetween(fromMs, toMs)
                 .filter { it.status != OrderStatus.ANNULEE.storageKey }
                 .filter { waitressId == null || it.waitressId == waitressId }
-            val debtByOrder = debtAmountsByOrder(orders.map { it.id })
+            val paidOrders = orders.filter { it.status == OrderStatus.PAYEE.storageKey }
+            val debtByOrder = debtAmountsByOrder(paidOrders.map { it.id })
             val repaymentsByWaitress = repaymentRevenueByWaitress(fromMs, toMs)
             orders.groupBy { it.waitressId to (it.waitressName ?: "Sans serveuse") }
                 .map { (key, list) ->
-                    val debtSum = list.sumOf { debtByOrder[it.id] ?: 0L }
-                    val generated = list.sumOf { it.totalAmount } - debtSum +
+                    val paid = list.filter { it.status == OrderStatus.PAYEE.storageKey }
+                    val debtSum = paid.sumOf { debtByOrder[it.id] ?: 0L }
+                    val generated = paid.sumOf { it.totalAmount } - debtSum +
                         (repaymentsByWaitress[key.first] ?: 0L)
-                    val collected = list.sumOf { it.paidAmount } - debtSum +
+                    val collected = paid.sumOf { it.paidAmount } - debtSum +
                         (repaymentsByWaitress[key.first] ?: 0L)
                     WaitressStats(
                         waitressId = key.first,
                         waitressName = key.second,
                         orderCount = list.size,
-                        paidCount = list.count { it.status == OrderStatus.PAYEE.storageKey },
+                        paidCount = paid.size,
                         unpaidCount = list.count {
                             it.status == OrderStatus.NON_PAYEE.storageKey ||
                                 it.status == OrderStatus.EN_COURS.storageKey
@@ -465,7 +467,7 @@ class OrderRepositoryImpl @Inject constructor(
     override suspend fun categorySales(fromMs: Long, toMs: Long, waitressId: Long?): List<CategorySalesRow> =
         withContext(Dispatchers.IO) {
             val orders = orderDao.listBetween(fromMs, toMs)
-                .filter { it.status != OrderStatus.ANNULEE.storageKey }
+                .filter { it.status == OrderStatus.PAYEE.storageKey }
                 .filter { waitressId == null || it.waitressId == waitressId }
             val debtByOrder = debtAmountsByOrder(orders.map { it.id })
             val costCache = mutableMapOf<Long, Long>()
@@ -496,7 +498,7 @@ class OrderRepositoryImpl @Inject constructor(
     override suspend fun productSales(fromMs: Long, toMs: Long, waitressId: Long?): List<ProductSalesRow> =
         withContext(Dispatchers.IO) {
             val orders = orderDao.listBetween(fromMs, toMs)
-                .filter { it.status != OrderStatus.ANNULEE.storageKey }
+                .filter { it.status == OrderStatus.PAYEE.storageKey }
                 .filter { waitressId == null || it.waitressId == waitressId }
             val debtByOrder = debtAmountsByOrder(orders.map { it.id })
             val costCache = mutableMapOf<Long, Long>()
@@ -530,20 +532,19 @@ class OrderRepositoryImpl @Inject constructor(
         withContext(Dispatchers.IO) {
             val orders = orderDao.listBetween(fromMs, toMs)
                 .filter { it.status != OrderStatus.ANNULEE.storageKey }
+            val paidOrders = orders.filter { it.status == OrderStatus.PAYEE.storageKey }
             val open = orders.count {
                 it.status == OrderStatus.EN_COURS.storageKey ||
                     it.status == OrderStatus.NON_PAYEE.storageKey
             }
-            val debtByOrder = debtAmountsByOrder(orders.map { it.id })
+            val debtByOrder = debtAmountsByOrder(paidOrders.map { it.id })
             val debtOnOrders = debtByOrder.values.sum()
             val repaymentRevenue = detteDao.totalPaiementsBetween(fromMs, toMs)
+            val expensesTotal = db.expenseDao().totalBetween(fromMs, toMs)
 
-            val generated = (orders.sumOf { it.totalAmount } - debtOnOrders + repaymentRevenue)
-                .coerceAtLeast(0L)
-            val collected = (orders.sumOf { it.paidAmount } - debtOnOrders + repaymentRevenue)
-                .coerceAtLeast(0L)
+            val salesCa = paidOrders.sumOf { it.totalAmount } - debtOnOrders + repaymentRevenue
+            val salesCollected = paidOrders.sumOf { it.paidAmount } - debtOnOrders + repaymentRevenue
             val products = productSales(fromMs, toMs, null)
-            // productSales inclut déjà le coût / CA des remboursements
             val cost = products.sumOf { it.cost }
 
             val cashToday = orderDao.totalPaymentsByMode("CASH", fromMs, toMs)
@@ -574,12 +575,13 @@ class OrderRepositoryImpl @Inject constructor(
             DashboardStats(
                 ordersToday = orders.size,
                 openOrders = open,
-                caGenerated = generated,
-                caCollected = collected,
+                caGenerated = salesCa - expensesTotal,
+                caCollected = salesCollected - expensesTotal,
                 toCollect = (orders.sumOf { it.totalAmount } - orders.sumOf { it.paidAmount })
                     .coerceAtLeast(0L),
                 costOfGoods = cost,
-                benefice = generated - cost,
+                benefice = salesCa - cost - expensesTotal,
+                expensesTotal = expensesTotal,
                 topProducts = products.take(5),
                 topCategories = categorySales(fromMs, toMs, null).take(5),
                 waitressStats = waitressStats(fromMs, toMs, null),
@@ -609,7 +611,7 @@ class OrderRepositoryImpl @Inject constructor(
         val orders = orderDao.listByCashierBetween(fromMs, toMs, cashierId)
         val debtByOrder = debtAmountsByOrder(orders.map { it.id })
         val costCache = mutableMapOf<Long, Long>()
-        var ca = 0L
+        var salesCa = 0L
         var cost = 0L
         orders.forEach { order ->
             val fraction = DebtAwareRevenue.recognizedFraction(
@@ -617,22 +619,27 @@ class OrderRepositoryImpl @Inject constructor(
                 debtByOrder[order.id] ?: 0L,
             )
             orderDao.getItems(order.id).forEach { item ->
-                ca += DebtAwareRevenue.scale(item.lineTotal, fraction)
+                salesCa += DebtAwareRevenue.scale(item.lineTotal, fraction)
                 val unit = costCache.getOrPut(item.productId) {
                     productDao.getById(item.productId)?.purchasePrice?.coerceAtLeast(0L) ?: 0L
                 }
                 cost += DebtAwareRevenue.scale(unit * item.quantity, fraction)
             }
         }
-        // Remboursements de dettes dans la période (CA + coût), filtrés caissier si possible
         val repay = repaymentRevenueAndCost(fromMs, toMs, cashierId)
-        ca += repay.first
+        salesCa += repay.first
         cost += repay.second
+        val expensesTotal = if (cashierId != null) {
+            db.expenseDao().totalByUserAndDateRange(cashierId, fromMs, toMs)
+        } else {
+            db.expenseDao().totalBetween(fromMs, toMs)
+        }
         CashierPeriodStats(
-            ca = ca,
+            ca = salesCa - expensesTotal,
             costOfGoods = cost,
-            benefice = ca - cost,
+            benefice = salesCa - cost - expensesTotal,
             orderCount = orders.size,
+            expensesTotal = expensesTotal,
         )
     }
 

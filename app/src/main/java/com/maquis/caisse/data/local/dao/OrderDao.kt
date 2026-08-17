@@ -8,6 +8,7 @@ import androidx.room.Update
 import com.maquis.caisse.data.local.entity.OrderEntity
 import com.maquis.caisse.data.local.entity.OrderItemEntity
 import com.maquis.caisse.data.local.entity.OrderPaymentEntity
+import com.maquis.caisse.data.local.model.OrderAmountTotal
 import com.maquis.caisse.data.local.model.PaymentModeTotal
 import kotlinx.coroutines.flow.Flow
 
@@ -146,6 +147,26 @@ interface OrderDao {
         """,
     )
     suspend fun totalPaymentsByModes(modes: List<String>, from: Long, to: Long): Long
+
+    /** Somme des paiements DEBT par commande. */
+    @Query(
+        """
+        SELECT order_id AS orderId, COALESCE(SUM(amount), 0) AS total
+        FROM order_payments
+        WHERE payment_mode = 'DEBT' AND order_id IN (:orderIds)
+        GROUP BY order_id
+        """,
+    )
+    suspend fun debtTotalsForOrders(orderIds: List<Long>): List<OrderAmountTotal>
+
+    /** Somme des paiements hors dette dont le timestamp tombe dans [from, to]. */
+    @Query(
+        """
+        SELECT COALESCE(SUM(amount), 0) FROM order_payments
+        WHERE payment_mode != 'DEBT' AND created_at BETWEEN :from AND :to
+        """,
+    )
+    suspend fun totalNonDebtPayments(from: Long, to: Long): Long
 
     @Transaction
     suspend fun replaceItems(orderId: Long, items: List<OrderItemEntity>) {

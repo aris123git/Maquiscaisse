@@ -13,8 +13,8 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 28
-        versionName = "0.8.14-ca-encaisse-benefice"
+        versionCode = 29
+        versionName = "0.8.15-bt-print-harden"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

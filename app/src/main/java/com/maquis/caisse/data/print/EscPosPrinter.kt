@@ -9,8 +9,6 @@ import com.maquis.caisse.core.SettingsKeys
 import com.maquis.caisse.domain.model.Order
 import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.repository.SettingsRepository
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -18,16 +16,30 @@ import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * Impression thermique Bluetooth ESC/POS (optionnelle).
- * Ne bloque jamais l'app si désactivée ou sans imprimante.
+ *
+ * Connexion durcie contre les échecs intermittents typiques des imprimantes
+ * bon marché : [BluetoothAdapter.cancelDiscovery] avant chaque connect,
+ * délai post-connexion avant écriture, retry avec backoff, et fallback
+ * RFCOMM canal 1 (réflexion) si le SPP standard échoue.
  */
 @Singleton
 class EscPosPrinter @Inject constructor(
     private val settings: SettingsRepository,
 ) {
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+
+    private companion object {
+        const val MAX_ATTEMPTS = 3
+        const val POST_CONNECT_DELAY_MS = 250L
+        const val RETRY_BASE_DELAY_MS = 400L
+        const val PRE_CONNECT_SETTLE_MS = 150L
+    }
 
     suspend fun isEnabled(): Boolean = settings.isPrintEnabled()
 
@@ -54,54 +66,105 @@ class EscPosPrinter @Inject constructor(
     private suspend fun printRaw(lines: List<String>): Result<Unit> {
         val address = settings.get(SettingsKeys.PRINTER_ADDRESS, "")
         if (address.isBlank()) {
-            return Result.failure(IllegalStateException("Aucune imprimante sélectionnée dans Paramètres"))
-        }
-        return try {
-            val adapter = BluetoothAdapter.getDefaultAdapter()
-                ?: return Result.failure(IllegalStateException("Bluetooth indisponible"))
-            if (!adapter.isEnabled) {
-                return Result.failure(IllegalStateException("Bluetooth désactivé"))
-            }
-            val device = adapter.getRemoteDevice(address)
-            adapter.cancelDiscovery()
-            val socket = openSocket(device)
-            try {
-                socket.outputStream.use { out ->
-                    writeEscPos(out, lines)
-                }
-            } finally {
-                try {
-                    socket.close()
-                } catch (_: Exception) {
-                }
-            }
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(
-                IllegalStateException(
-                    e.message?.takeIf { it.isNotBlank() } ?: "Échec connexion imprimante",
-                    e,
-                ),
+            return Result.failure(
+                IllegalStateException("Aucune imprimante sélectionnée dans Paramètres"),
             )
         }
+
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+            ?: return Result.failure(IllegalStateException("Bluetooth indisponible"))
+        if (!adapter.isEnabled) {
+            return Result.failure(IllegalStateException("Bluetooth désactivé"))
+        }
+
+        val device = adapter.getRemoteDevice(address)
+        var lastError: Exception? = null
+
+        for (attempt in 1..MAX_ATTEMPTS) {
+            // Cause #1 des échecs RFCOMM Android : discovery encore active.
+            runCatching { adapter.cancelDiscovery() }
+            if (attempt == 1) delay(PRE_CONNECT_SETTLE_MS)
+
+            val socket = runCatching { openSocket(adapter, device) }
+                .onFailure { e -> lastError = e as? Exception ?: Exception(e) }
+                .getOrNull()
+
+            if (socket != null) {
+                try {
+                    // Beaucoup d'imprimantes thermiques ignorent les 1ers octets
+                    // si on écrit immédiatement après connect().
+                    delay(POST_CONNECT_DELAY_MS)
+                    socket.outputStream.use { out ->
+                        writeEscPos(out, lines)
+                    }
+                    return Result.success(Unit)
+                } catch (e: Exception) {
+                    lastError = e
+                } finally {
+                    runCatching { socket.close() }
+                }
+            }
+
+            if (attempt < MAX_ATTEMPTS) {
+                delay(RETRY_BASE_DELAY_MS * attempt)
+            }
+        }
+
+        return Result.failure(
+            IllegalStateException(
+                lastError?.message?.takeIf { it.isNotBlank() }
+                    ?: "Échec connexion imprimante après $MAX_ATTEMPTS essais",
+                lastError,
+            ),
+        )
     }
 
+    /**
+     * Ordre des stratégies (chaque connect est précédé de cancelDiscovery) :
+     * 1. SPP sécurisé (UUID standard)
+     * 2. SPP insecure
+     * 3. RFCOMM canal 1 via réflexion (hack imprimantes cheap / tablettes)
+     */
     @SuppressLint("MissingPermission")
-    private fun openSocket(device: BluetoothDevice): BluetoothSocket {
-        // Tentative standard SPP, puis canal RFCOMM 1 (souvent nécessaire sur tablettes).
-        val primary = runCatching {
-            device.createRfcommSocketToServiceRecord(sppUuid).also { it.connect() }
-        }
-        if (primary.isSuccess) return primary.getOrThrow()
+    private fun openSocket(
+        adapter: BluetoothAdapter,
+        device: BluetoothDevice,
+    ): BluetoothSocket {
+        val errors = mutableListOf<Throwable>()
 
-        val fallback = runCatching {
-            val method = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+        fun tryConnect(label: String, factory: () -> BluetoothSocket): BluetoothSocket? {
+            runCatching { adapter.cancelDiscovery() }
+            var socket: BluetoothSocket? = null
+            return try {
+                socket = factory()
+                socket.connect()
+                socket
+            } catch (e: Exception) {
+                errors += IllegalStateException("$label: ${e.message}", e)
+                runCatching { socket?.close() }
+                null
+            }
+        }
+
+        tryConnect("SPP") {
+            device.createRfcommSocketToServiceRecord(sppUuid)
+        }?.let { return it }
+
+        tryConnect("SPP insecure") {
+            device.createInsecureRfcommSocketToServiceRecord(sppUuid)
+        }?.let { return it }
+
+        tryConnect("RFCOMM canal 1") {
+            val method = device.javaClass.getMethod(
+                "createRfcommSocket",
+                Int::class.javaPrimitiveType,
+            )
             @Suppress("UNCHECKED_CAST")
-            (method.invoke(device, 1) as BluetoothSocket).also { it.connect() }
-        }
-        return fallback.getOrElse {
-            throw primary.exceptionOrNull() ?: it
-        }
+            method.invoke(device, 1) as BluetoothSocket
+        }?.let { return it }
+
+        throw errors.lastOrNull()
+            ?: IllegalStateException("Impossible d'ouvrir un socket Bluetooth")
     }
 
     private fun writeEscPos(out: OutputStream, lines: List<String>) {

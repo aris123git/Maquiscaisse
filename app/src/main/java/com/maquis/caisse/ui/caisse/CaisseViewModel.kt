@@ -474,8 +474,12 @@ class CaisseViewModel @Inject constructor(
                     ),
                 )
                 savedStateHandle[KEY_CART] = CartJson.encode(emptyList())
+                var snack = "Commande ${order.publicId} payée"
                 if (printer.isEnabled()) {
-                    printer.printOrder(order)
+                    val printResult = printer.printOrder(order)
+                    if (printResult.isFailure) {
+                        snack += " — Impression : ${printResult.exceptionOrNull()?.message ?: "échec"}"
+                    }
                 }
                 _uiState.update {
                     it.copy(
@@ -485,7 +489,7 @@ class CaisseViewModel @Inject constructor(
                         completedOrder = order,
                         completedSale = null,
                         quantityOverlay = null,
-                        snackbarMessage = "Commande ${order.publicId} payée",
+                        snackbarMessage = snack,
                     )
                 }
             } catch (e: CancellationException) {

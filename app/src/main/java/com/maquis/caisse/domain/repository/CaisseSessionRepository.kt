@@ -19,4 +19,11 @@ interface CaisseSessionRepository {
 
     /** Les 30 dernières sessions (Flow pour l'UI). */
     fun observeRecent(): Flow<List<CaisseSession>>
+
+    /** Sessions ouvertes (opened_at) dans la plage, optionnellement filtrées par caissier. */
+    suspend fun listOpenedBetween(
+        fromMs: Long,
+        toMs: Long,
+        userId: Long? = null,
+    ): List<CaisseSession>
 }

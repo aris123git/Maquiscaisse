@@ -6,6 +6,7 @@ import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.data.print.EscPosPrinter
 import com.maquis.caisse.domain.model.Order
 import com.maquis.caisse.domain.model.OrderLine
+import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.domain.repository.OrderRepository
@@ -28,6 +29,8 @@ data class OrderDetailUiState(
     val canModifyOrCancel: Boolean = false,
     /** Marquer payé : admin ou caissier selon permissions. */
     val canMarkPaid: Boolean = false,
+    /** Après paiement total : retourner à Commandes en cours. */
+    val navigateToOpenOrders: Boolean = false,
 )
 
 @HiltViewModel
@@ -189,16 +192,38 @@ class OrderDetailViewModel @Inject constructor(
                     amount = payAmount,
                     amountTendered = tendered,
                 )
-                _ui.update {
-                    it.copy(
-                        order = updated,
-                        isBusy = false,
-                        message = if (updated.status.label == "Payée") {
-                            "Commande payée"
-                        } else {
-                            "Paiement partiel enregistré"
-                        },
-                    )
+                if (printer.isEnabled()) {
+                    val printResult = printer.printOrder(updated)
+                    val fullyPaid = updated.status == OrderStatus.PAYEE
+                    val payMsg = if (fullyPaid) "Commande payée" else "Paiement partiel enregistré"
+                    val printHint = if (printResult.isFailure) {
+                        " — Impression : ${printResult.exceptionOrNull()?.message ?: "échec"}"
+                    } else {
+                        ""
+                    }
+                    _ui.update {
+                        it.copy(
+                            order = updated,
+                            isBusy = false,
+                            message = payMsg + printHint,
+                            error = if (printResult.isFailure) {
+                                printResult.exceptionOrNull()?.message
+                            } else {
+                                null
+                            },
+                            navigateToOpenOrders = fullyPaid,
+                        )
+                    }
+                } else {
+                    val fullyPaid = updated.status == OrderStatus.PAYEE
+                    _ui.update {
+                        it.copy(
+                            order = updated,
+                            isBusy = false,
+                            message = if (fullyPaid) "Commande payée" else "Paiement partiel enregistré",
+                            navigateToOpenOrders = fullyPaid,
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 _ui.update { it.copy(isBusy = false, error = e.message) }
@@ -206,27 +231,23 @@ class OrderDetailViewModel @Inject constructor(
         }
     }
 
+    fun consumeNavigateToOpenOrders() {
+        _ui.update { it.copy(navigateToOpenOrders = false) }
+    }
+
     fun printTicket() {
         val order = _ui.value.order ?: return
         viewModelScope.launch {
-            // lock UI while printing to prevent duplicate clicks
-            _ui.update { it.copy(isBusy = true, message = null, error = null) }
-            try {
-                if (!printer.isEnabled()) {
-                    _ui.update { it.copy(message = "Impression désactivée") }
-                    return@launch
-                }
-                val result = printer.printOrder(order)
-                _ui.update {
-                    it.copy(
-                        message = if (result.isSuccess) "Ticket imprimé" else result.exceptionOrNull()?.message,
-                        error = if (result.isFailure) result.exceptionOrNull()?.message ?: "Échec impression" else null,
-                    )
-                }
-            } catch (e: Exception) {
-                _ui.update { it.copy(error = e.message ?: "Échec impression inattendu") }
-            } finally {
-                _ui.update { it.copy(isBusy = false) }
+            if (!printer.isEnabled()) {
+                _ui.update { it.copy(message = "Impression désactivée") }
+                return@launch
+            }
+            val result = printer.printOrder(order)
+            _ui.update {
+                it.copy(
+                    message = if (result.isSuccess) "Ticket imprimé" else result.exceptionOrNull()?.message,
+                    error = if (result.isFailure) result.exceptionOrNull()?.message else null,
+                )
             }
         }
     }

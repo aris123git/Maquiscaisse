@@ -4,6 +4,7 @@ import com.maquis.caisse.data.repository.AvoirRepositoryImpl
 import com.maquis.caisse.data.repository.CaisseSessionRepositoryImpl
 import com.maquis.caisse.data.repository.CategoryRepositoryImpl
 import com.maquis.caisse.data.repository.DetteRepositoryImpl
+import com.maquis.caisse.data.repository.ExpenseRepositoryImpl
 import com.maquis.caisse.data.repository.OrderRepositoryImpl
 import com.maquis.caisse.data.repository.ProductRepositoryImpl
 import com.maquis.caisse.data.repository.SaleRepositoryImpl
@@ -15,6 +16,7 @@ import com.maquis.caisse.domain.repository.AvoirRepository
 import com.maquis.caisse.domain.repository.CaisseSessionRepository
 import com.maquis.caisse.domain.repository.CategoryRepository
 import com.maquis.caisse.domain.repository.DetteRepository
+import com.maquis.caisse.domain.repository.ExpenseRepository
 import com.maquis.caisse.domain.repository.OrderRepository
 import com.maquis.caisse.domain.repository.ProductRepository
 import com.maquis.caisse.domain.repository.SaleRepository
@@ -64,4 +66,7 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindAvoirRepository(impl: AvoirRepositoryImpl): AvoirRepository
+
+    @Binds @Singleton
+    abstract fun bindExpenseRepository(impl: ExpenseRepositoryImpl): ExpenseRepository
 }

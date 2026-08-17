@@ -13,18 +13,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -44,7 +47,6 @@ import com.maquis.caisse.ui.produits.ProductTile
  */
 @Composable
 fun CaisseScreen(
-    onOrderCreated: (Long) -> Unit = {},
     viewModel: CaisseViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -157,10 +159,7 @@ fun CaisseScreen(
                 onLineLongPress = viewModel::onCartLineLongPress,
                 onValidate = viewModel::openPayment,
                 onClear = viewModel::clearCart,
-                onSaveOrder = {
-                    viewModel.saveUnpaidOrder(onCreated = onOrderCreated)
-                },
-                onReprint = if (state.completedOrder != null) viewModel::printLastOrder else null,
+                onSaveOrder = { viewModel.saveUnpaidOrder() },
                 modifier = Modifier
                     .weight(0.72f)
                     .fillMaxHeight()
@@ -221,6 +220,41 @@ fun CaisseScreen(
         TicketDialog(
             sale = sale,
             onDismiss = viewModel::dismissTicket,
+        )
+    }
+
+    state.savedOrderPrompt?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissSavedOrderPrompt,
+            title = { Text("Commande ${prompt.order.publicId}") },
+            text = {
+                Text(
+                    if (prompt.printEnabled) {
+                        buildString {
+                            append("Commande enregistrée.")
+                            prompt.printMessage?.let {
+                                append("\n\n")
+                                append(it)
+                            }
+                            append("\n\nTu restes en Caisse. Réimprime si besoin, ou OK pour continuer.")
+                        }
+                    } else {
+                        "Commande enregistrée. Tu restes en Caisse."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = viewModel::dismissSavedOrderPrompt,
+                ) { Text("OK", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                if (prompt.printEnabled) {
+                    TextButton(onClick = viewModel::reprintSavedOrder) {
+                        Text("Réimprimer")
+                    }
+                }
+            },
         )
     }
 }

@@ -38,7 +38,7 @@ interface DetteDao {
     @Query("SELECT * FROM dette_paiements ORDER BY paid_at ASC")
     fun observeAllPaiements(): Flow<List<DettePaiementEntity>>
 
-    @Query("SELECT COALESCE(SUM(amount),0) FROM dettes WHERE status != 'SETTLED'")
+    @Query("SELECT COALESCE(SUM(original_amount - paid_amount),0) FROM dettes WHERE status != 'SETTLED'")
     suspend fun totalEnCours(): Long
 
     /** Somme des dettes créées dans la fenêtre [from, to]. */

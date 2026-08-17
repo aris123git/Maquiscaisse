@@ -3,6 +3,9 @@ package com.maquis.caisse.ui.parametres
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -45,7 +48,6 @@ import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.core.SettingsKeys
 import com.maquis.caisse.data.backup.BackupManager
 import com.maquis.caisse.data.print.EscPosPrinter
-import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.domain.repository.SettingsRepository
 import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.kiosk.KioskManager
@@ -72,7 +74,6 @@ data class ParametresUiState(
     val printWidth: String = "58",
     val printerAddress: String = "",
     val printerName: String = "",
-    val printerCodepage: String = "0",
     val tablesEnabled: Boolean = true,
     val devices: List<BtDeviceUi> = emptyList(),
     val message: String? = null,
@@ -101,10 +102,8 @@ class ParametresViewModel @Inject constructor(
 
     fun suggestedBackupName(): String = backupManager.suggestedFileName()
 
-    fun isAdmin(): Boolean {
-        val user = session.userOrNull() ?: return false
-        return user.role == "ADMIN" || user.can(Permissions.MANAGE_USERS)
-    }
+    /** Sortie / config kiosque : uniquement le compte rôle ADMIN. */
+    fun isAdmin(): Boolean = session.userOrNull()?.role == "ADMIN"
 
     fun changeOwnPin(newPin: String, confirm: String) = viewModelScope.launch {
         if (newPin != confirm) {
@@ -118,64 +117,43 @@ class ParametresViewModel @Inject constructor(
         }
         try {
             userRepository.changePin(me.id, newPin)
-            _ui.update { it.copy(message = "Ton code PIN a été modifié") }
+            // Même PIN pour le kiosque.
+            if (me.role == "ADMIN") {
+                runCatching { kioskManager.setAdminPin(newPin) }
+            }
+            _ui.update { it.copy(message = "PIN Admin mis à jour (aussi utilisé pour le kiosque)") }
         } catch (e: Exception) {
             _ui.update { it.copy(message = e.message ?: "Échec modification du code") }
         }
     }
 
-    fun setKioskAdminPin(currentPin: String?, newPin: String, confirm: String): Boolean {
-        if (!isAdmin()) {
-            _ui.update { it.copy(message = "Réservé à l'administrateur") }
-            return false
-        }
-        if (newPin != confirm) {
-            _ui.update { it.copy(message = "Les deux codes administrateur ne correspondent pas") }
-            return false
-        }
-        if (kioskManager.hasAdminPin()) {
-            when (val result = kioskManager.verifyAdminPin(currentPin.orEmpty())) {
-                is KioskSecureStore.PinVerifyResult.Ok -> Unit
-                is KioskSecureStore.PinVerifyResult.Wrong -> {
-                    _ui.update {
-                        it.copy(message = "PIN administrateur incorrect (${result.remaining} essais restants)")
-                    }
-                    return false
-                }
-                is KioskSecureStore.PinVerifyResult.LockedOut -> {
-                    _ui.update {
-                        it.copy(message = "Trop d'essais — réessaie dans ${result.secondsRemaining}s")
-                    }
-                    return false
-                }
-                KioskSecureStore.PinVerifyResult.NoPinSet -> Unit
-            }
-        }
-        return try {
-            kioskManager.setAdminPin(newPin)
-            refreshKioskUi()
-            _ui.update { it.copy(message = "PIN administrateur kiosque enregistré") }
-            true
-        } catch (e: Exception) {
-            _ui.update { it.copy(message = e.message ?: "Échec enregistrement PIN") }
-            false
-        }
-    }
-
     fun setKioskEnabled(enabled: Boolean, adminPin: String, activity: Activity): Boolean {
-        if (!isAdmin()) {
-            _ui.update { it.copy(message = "Réservé à l'administrateur") }
-            return false
-        }
+        if (!requireAdminAccount()) return false
         if (!verifyPinForAdminAction(adminPin)) return false
-        if (enabled && !kioskManager.hasAdminPin()) {
-            _ui.update { it.copy(message = "Définis d'abord le PIN administrateur kiosque") }
-            return false
-        }
+        // Un seul PIN : celui du compte Admin (synchronisé aussi en store kiosque).
+        runCatching { kioskManager.setAdminPin(adminPin) }
         if (enabled) {
-            kioskManager.setEnabled(true)
-            kioskManager.enterKiosk(activity)
-            _ui.update { it.copy(message = "Mode kiosque activé (Lock Task)") }
+            kioskManager.setEnabled(true) // persiste + active aussi le démarrage auto
+            // Home / batterie avant Lock Task (sinon Settings peut être bloqué).
+            runCatching {
+                if (!kioskManager.isDeviceOwner()) {
+                    activity.startActivity(kioskManager.homeSettingsIntent())
+                }
+                kioskManager.requestIgnoreBatteryOptimizationsIntent()?.let { activity.startActivity(it) }
+            }
+            val lockOk = kioskManager.enterKiosk(activity)
+            val err = kioskManager.lastError()
+            _ui.update {
+                it.copy(
+                    message = when {
+                        lockOk && err == null ->
+                            "Mode kiosque activé — tablette dédiée NexaGes"
+                        else ->
+                            "Kiosque activé mais Lock Task incomplet. " +
+                                (err ?: "Définis NexaGes comme Home + Device Owner.")
+                    },
+                )
+            }
         } else {
             kioskManager.disableKiosk(activity)
             _ui.update { it.copy(message = "Mode kiosque désactivé") }
@@ -185,17 +163,14 @@ class ParametresViewModel @Inject constructor(
     }
 
     fun setKioskAutoStart(enabled: Boolean, adminPin: String): Boolean {
-        if (!isAdmin()) {
-            _ui.update { it.copy(message = "Réservé à l'administrateur") }
-            return false
-        }
+        if (!requireAdminAccount()) return false
         if (!verifyPinForAdminAction(adminPin)) return false
         kioskManager.setAutoStart(enabled)
         refreshKioskUi()
         _ui.update {
             it.copy(
                 message = if (enabled) {
-                    "NexaPOS se lancera automatiquement au démarrage"
+                    "NexaGes se lancera automatiquement au démarrage"
                 } else {
                     "Démarrage automatique désactivé"
                 },
@@ -205,48 +180,63 @@ class ParametresViewModel @Inject constructor(
     }
 
     fun exitKioskTemporary(adminPin: String, activity: Activity): Boolean {
-        if (!isAdmin()) {
-            _ui.update { it.copy(message = "Réservé à l'administrateur") }
-            return false
-        }
+        if (!requireAdminAccount()) return false
         if (!verifyPinForAdminAction(adminPin)) return false
         kioskManager.exitKiosk(activity)
         refreshKioskUi()
+        val minutes = KioskSecureStore.TEMP_UNLOCK_MS / 60_000L
         _ui.update {
-            it.copy(message = "Mode kiosque quitté temporairement (actif au prochain redémarrage)")
+            it.copy(
+                message = "Kiosque quitté ${minutes} min — re-verrouillage automatique ensuite",
+            )
         }
         return true
     }
 
+    fun openHomeSettings(activity: Activity) {
+        runCatching { activity.startActivity(kioskManager.homeSettingsIntent()) }
+    }
+
+    fun openBatteryExemption(activity: Activity) {
+        val intent = kioskManager.requestIgnoreBatteryOptimizationsIntent()
+        if (intent != null) {
+            runCatching { activity.startActivity(intent) }
+        } else {
+            _ui.update { it.copy(message = "Optimisation batterie déjà ignorée pour NexaGes") }
+        }
+    }
+
     /** Vérifie le PIN admin sans quitter le kiosque (étape avant confirmation). */
     fun checkAdminPin(adminPin: String): Boolean {
-        if (!isAdmin()) {
-            _ui.update { it.copy(message = "Réservé à l'administrateur") }
-            return false
-        }
+        if (!requireAdminAccount()) return false
         return verifyPinForAdminAction(adminPin)
     }
 
-    private fun verifyPinForAdminAction(adminPin: String): Boolean {
-        when (val result = kioskManager.verifyAdminPin(adminPin)) {
-            KioskSecureStore.PinVerifyResult.Ok -> return true
-            KioskSecureStore.PinVerifyResult.NoPinSet -> {
-                _ui.update { it.copy(message = "Définis d'abord le PIN administrateur kiosque") }
-                return false
-            }
-            is KioskSecureStore.PinVerifyResult.Wrong -> {
-                _ui.update {
-                    it.copy(message = "PIN administrateur incorrect (${result.remaining} essais restants)")
-                }
-                return false
-            }
-            is KioskSecureStore.PinVerifyResult.LockedOut -> {
-                _ui.update {
-                    it.copy(message = "Trop d'essais — réessaie dans ${result.secondsRemaining}s")
-                }
-                return false
-            }
+    private fun requireAdminAccount(): Boolean {
+        if (isAdmin()) return true
+        _ui.update {
+            it.copy(message = "Connecte-toi avec le compte administrateur pour gérer le kiosque")
         }
+        return false
+    }
+
+    private fun matchesLoggedInAdminPin(pin: String): Boolean {
+        val user = session.userOrNull() ?: return false
+        return user.role == "ADMIN" && user.pin == pin
+    }
+
+    /** Un seul code : le PIN du compte Admin connecté (aussi utilisé pour le kiosque). */
+    private fun verifyPinForAdminAction(adminPin: String): Boolean {
+        if (adminPin.isBlank()) {
+            _ui.update { it.copy(message = "Saisis le PIN du compte Admin") }
+            return false
+        }
+        if (matchesLoggedInAdminPin(adminPin)) {
+            runCatching { kioskManager.setAdminPin(adminPin) }
+            return true
+        }
+        _ui.update { it.copy(message = "PIN Admin incorrect") }
+        return false
     }
 
     private fun refreshKioskUi() {
@@ -273,7 +263,7 @@ class ParametresViewModel @Inject constructor(
     suspend fun reload() {
         _ui.update {
             it.copy(
-                shopName = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse"),
+                shopName = settings.get(SettingsKeys.SHOP_NAME, "NexaGes"),
                 shopAddress = settings.get(SettingsKeys.SHOP_ADDRESS, ""),
                 shopPhone = settings.get(SettingsKeys.SHOP_PHONE, ""),
                 ticketFooter = settings.get(SettingsKeys.TICKET_FOOTER, "Merci pour votre visite."),
@@ -281,7 +271,6 @@ class ParametresViewModel @Inject constructor(
                 printWidth = settings.get(SettingsKeys.PRINT_WIDTH, "58"),
                 printerAddress = settings.get(SettingsKeys.PRINTER_ADDRESS, ""),
                 printerName = settings.get(SettingsKeys.PRINTER_NAME, ""),
-                printerCodepage = settings.get(SettingsKeys.PRINTER_CODEPAGE, "0"),
                 tablesEnabled = settings.get(SettingsKeys.TABLES_ENABLED, "true") == "true",
             )
         }
@@ -304,7 +293,6 @@ class ParametresViewModel @Inject constructor(
         settings.set(SettingsKeys.PRINT_WIDTH, s.printWidth)
         settings.set(SettingsKeys.PRINTER_ADDRESS, s.printerAddress)
         settings.set(SettingsKeys.PRINTER_NAME, s.printerName)
-        settings.set(SettingsKeys.PRINTER_CODEPAGE, s.printerCodepage)
         settings.set(SettingsKeys.TABLES_ENABLED, s.tablesEnabled.toString())
         _ui.update { it.copy(message = "Paramètres enregistrés") }
     }
@@ -325,15 +313,34 @@ class ParametresViewModel @Inject constructor(
     }
 
     fun importBackup(uri: Uri) = viewModelScope.launch {
-        _ui.update { it.copy(backupBusy = true, message = "Restauration… l'app va redémarrer") }
+        _ui.update { it.copy(backupBusy = true, message = "Restauration en cours…") }
         val result = backupManager.importFromUri(uri)
         if (result.isSuccess) {
+            _ui.update { it.copy(message = "Restauration OK — redémarrage…") }
             backupManager.restartApp()
         } else {
+            val detail = result.exceptionOrNull()?.message ?: "Erreur inconnue"
             _ui.update {
                 it.copy(
                     backupBusy = false,
-                    message = result.exceptionOrNull()?.message ?: "Échec de la restauration",
+                    message = "Échec restauration : $detail",
+                )
+            }
+        }
+    }
+
+    fun importBackupFromFolder(treeUri: Uri) = viewModelScope.launch {
+        _ui.update { it.copy(backupBusy = true, message = "Restauration du dossier app…") }
+        val result = backupManager.importFromTreeUri(treeUri)
+        if (result.isSuccess) {
+            _ui.update { it.copy(message = "Restauration OK — redémarrage…") }
+            backupManager.restartApp()
+        } else {
+            val detail = result.exceptionOrNull()?.message ?: "Erreur inconnue"
+            _ui.update {
+                it.copy(
+                    backupBusy = false,
+                    message = "Échec restauration dossier : $detail",
                 )
             }
         }
@@ -358,19 +365,15 @@ class ParametresViewModel @Inject constructor(
             _ui.update { it.copy(message = "Impression désactivée — aucun envoi") }
             return@launch
         }
-        try {
-            val result = printer.testPrint()
-            _ui.update {
-                it.copy(
-                    message = if (result.isSuccess) {
-                        "Test imprimé"
-                    } else {
-                        result.exceptionOrNull()?.message ?: "Échec impression"
-                    },
-                )
-            }
-        } catch (e: Exception) {
-            _ui.update { it.copy(message = e.message ?: "Échec impression inattendu") }
+        val result = printer.testPrint()
+        _ui.update {
+            it.copy(
+                message = if (result.isSuccess) {
+                    "Test imprimé"
+                } else {
+                    result.exceptionOrNull()?.message ?: "Échec impression"
+                },
+            )
         }
     }
 }
@@ -382,13 +385,24 @@ private enum class KioskPinAction {
     EXIT_KIOSK,
 }
 
+private fun Context.findActivity(): Activity? {
+    var ctx: Context? = this
+    while (ctx is ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return ctx as? Activity
+}
+
 @Composable
 fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
-    val activity = LocalContext.current as Activity
+    val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
     var permissionsReady by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingRestoreTree by remember { mutableStateOf<Uri?>(null) }
     var changeOwnPin by remember { mutableStateOf(false) }
     var kioskPinAction by remember { mutableStateOf<KioskPinAction?>(null) }
     var pendingKioskEnable by remember { mutableStateOf<Boolean?>(null) }
@@ -403,10 +417,28 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
     }
 
     val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
+        ActivityResultContracts.GetContent(),
     ) { uri ->
         if (uri != null) {
+            pendingRestoreTree = null
             pendingRestoreUri = uri
+            confirmRestore = true
+        }
+    }
+
+    val importFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { treeUri ->
+        if (treeUri != null) {
+            // Persiste l'accès au dossier (USB / Downloads).
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    treeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            pendingRestoreUri = null
+            pendingRestoreTree = treeUri
             confirmRestore = true
         }
     }
@@ -460,8 +492,9 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
         GlassCard {
         Text("Sauvegarde des données", style = MaterialTheme.typography.titleLarge)
         Text(
-            "Avant une désinstallation (conflit d'APK), exporte une sauvegarde. " +
-                "Après réinstallation, restaure ce fichier. La caisse n'est pas ralentie.",
+            "Pour récupérer un ancien dossier app (Replit / copie USB) : " +
+                "sélectionne le dossier qui contient « databases » " +
+                "(avec maquis_caisse.db). Tu peux aussi restaurer un .zip ou .db.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -471,10 +504,15 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
         ) { Text("Exporter la sauvegarde") }
         OutlinedButton(
-            onClick = { importLauncher.launch(arrayOf(BackupManager.MIME_ZIP, "application/octet-stream", "*/*")) },
+            onClick = { importFolderLauncher.launch(null) },
             enabled = !ui.backupBusy,
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-        ) { Text("Restaurer une sauvegarde") }
+        ) { Text("Restaurer depuis un dossier app") }
+        OutlinedButton(
+            onClick = { importLauncher.launch("*/*") },
+            enabled = !ui.backupBusy,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+        ) { Text("Restaurer un fichier (.zip ou .db)") }
         }
 
         TextPill("Impression", PillTone.CYAN)
@@ -495,20 +533,6 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                 options = listOf("58", "80"),
                 optionLabel = { "$it mm" },
                 onSelect = { v -> if (v != null) viewModel.update { it.copy(printWidth = v) } },
-            )
-            DropdownField(
-                label = "Profil imprimante",
-                selected = ui.printerCodepage,
-                options = listOf("0", "16", "-1"),
-                optionLabel = { cp ->
-                    when (cp) {
-                        "0"  -> "Générique ESC/POS — PC437 (défaut)"
-                        "16" -> "WPC1252 / Windows-1252"
-                        "-1" -> "Sans sélection de page de codes (legacy)"
-                        else -> "Page $cp"
-                    }
-                },
-                onSelect = { v -> if (v != null) viewModel.update { it.copy(printerCodepage = v) } },
             )
             Text(
                 "Imprimante : ${ui.printerName.ifBlank { "aucune" }} ${ui.printerAddress}",
@@ -547,8 +571,8 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             GlassCard {
             Text("MODE KIOSQUE", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Verrouille la tablette sur NexaPOS (Lock Task Mode Android). " +
-                    "Le PIN administrateur kiosque est distinct des codes caissier.",
+                "Tablette dédiée NexaGes. Même PIN que le compte Admin. " +
+                    "Les options restent valables après redémarrage.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -560,7 +584,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                         kioskPinAction = KioskPinAction.TOGGLE_ENABLED
                     },
                 )
-                Text("Activer le mode kiosque")
+                Text("Activer le mode kiosque (persistant)")
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
@@ -570,17 +594,20 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                         kioskPinAction = KioskPinAction.TOGGLE_AUTO_START
                     },
                 )
-                Text("Lancer automatiquement NexaPOS au démarrage")
+                Text("Démarrer automatiquement après allumage")
             }
             Text(
-                "PIN administrateur : ${if (ui.kioskHasPin) "••••" else "non défini"}",
+                "Astuce : NexaGes en application d'accueil (Home) + Device Owner ADB " +
+                    "pour un verrouillage total.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "PIN kiosque = PIN du compte Admin (modifiable via « Changer mon code PIN »).",
                 style = MaterialTheme.typography.bodyLarge,
             )
-            OutlinedButton(
-                onClick = { kioskPinAction = KioskPinAction.SET_PIN },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) {
-                Text(if (ui.kioskHasPin) "Modifier le PIN administrateur" else "Définir le PIN administrateur")
+            ui.message?.takeIf { it.contains("Lock Task", ignoreCase = true) || it.contains("kiosque", ignoreCase = true) }?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -589,7 +616,15 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                 onClick = { kioskPinAction = KioskPinAction.EXIT_KIOSK },
                 enabled = ui.kioskEnabled && ui.kioskLockedNow,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-            ) { Text("Quitter le mode kiosque") }
+            ) { Text("Quitter le mode kiosque (3 min)") }
+            OutlinedButton(
+                onClick = { activity?.let(viewModel::openHomeSettings) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("Choisir NexaGes comme accueil (Home)") }
+            OutlinedButton(
+                onClick = { activity?.let(viewModel::openBatteryExemption) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("Ignorer l'optimisation batterie") }
             Text(
                 if (ui.kioskDeviceOwner) {
                     "Device Owner actif — verrouillage système renforcé."
@@ -655,20 +690,33 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             onDismissRequest = {
                 confirmRestore = false
                 pendingRestoreUri = null
+                pendingRestoreTree = null
             },
             title = { Text("Restaurer la sauvegarde ?") },
             text = {
                 Text(
-                    "Les données actuelles seront remplacées. L'application redémarrera ensuite.",
+                    if (pendingRestoreTree != null) {
+                        "Les données actuelles seront remplacées par ce dossier app " +
+                            "(databases + images + préférences). L'application redémarrera."
+                    } else {
+                        "Les données actuelles seront remplacées. " +
+                            "Choisis un .zip, un .db, ou un dossier contenant databases/maquis_caisse.db. " +
+                            "L'application redémarrera ensuite."
+                    },
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val uri = pendingRestoreUri
+                        val fileUri = pendingRestoreUri
+                        val treeUri = pendingRestoreTree
                         confirmRestore = false
                         pendingRestoreUri = null
-                        if (uri != null) viewModel.importBackup(uri)
+                        pendingRestoreTree = null
+                        when {
+                            treeUri != null -> viewModel.importBackupFromFolder(treeUri)
+                            fileUri != null -> viewModel.importBackup(fileUri)
+                        }
                     },
                 ) { Text("Restaurer") }
             },
@@ -677,6 +725,7 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                     onClick = {
                         confirmRestore = false
                         pendingRestoreUri = null
+                        pendingRestoreTree = null
                     },
                 ) { Text("Annuler") }
             },
@@ -693,21 +742,17 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                 pendingKioskEnable = null
                 pendingAutoStart = null
             },
-            onConfirm = { currentPin, newPin, confirmPin ->
+            onConfirm = { currentPin, _, _ ->
                 when (pinAction) {
                     KioskPinAction.SET_PIN -> {
-                        if (viewModel.setKioskAdminPin(
-                                currentPin,
-                                newPin.orEmpty(),
-                                confirmPin.orEmpty(),
-                            )
-                        ) {
-                            kioskPinAction = null
-                        }
+                        // PIN unique = compte Admin → ouvrir le changement de PIN compte.
+                        kioskPinAction = null
+                        changeOwnPin = true
                     }
                     KioskPinAction.TOGGLE_ENABLED -> {
+                        val act = activity ?: return@KioskAdminPinDialog
                         val target = pendingKioskEnable ?: return@KioskAdminPinDialog
-                        if (viewModel.setKioskEnabled(target, currentPin.orEmpty(), activity)) {
+                        if (viewModel.setKioskEnabled(target, currentPin.orEmpty(), act)) {
                             kioskPinAction = null
                             pendingKioskEnable = null
                         }
@@ -740,17 +785,20 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
             title = { Text("Quitter le mode kiosque ?") },
             text = {
                 Text(
-                    "La navigation Android sera temporairement débloquée. " +
-                        "Le mode kiosque se réactivera après un redémarrage si toujours activé.",
+                    "Navigation Android débloquée pendant 3 minutes, " +
+                        "puis re-verrouillage automatique. Déconnexion Admin relock aussi.",
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
+                        val act = activity
                         val pin = verifiedExitPin.orEmpty()
                         confirmExitKiosk = false
                         verifiedExitPin = null
-                        viewModel.exitKioskTemporary(pin, activity)
+                        if (act != null) {
+                            viewModel.exitKioskTemporary(pin, act)
+                        }
                     },
                 ) { Text("Confirmer") }
             },
@@ -777,20 +825,8 @@ private fun KioskAdminPinDialog(
     var newPin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
 
-    val title = when (action) {
-        KioskPinAction.SET_PIN ->
-            if (hasExistingPin) "Modifier le PIN administrateur" else "PIN administrateur kiosque"
-        KioskPinAction.EXIT_KIOSK -> "Code administrateur requis"
-        else -> "Code administrateur requis"
-    }
-
-    val canSubmit = when (action) {
-        KioskPinAction.SET_PIN -> {
-            val newOk = newPin.length >= KioskSecureStore.MIN_PIN_LENGTH && newPin == confirmPin
-            if (hasExistingPin) currentPin.length >= KioskSecureStore.MIN_PIN_LENGTH && newOk else newOk
-        }
-        else -> currentPin.length >= KioskSecureStore.MIN_PIN_LENGTH
-    }
+    val title = "PIN du compte Admin"
+    val canSubmit = currentPin.length >= KioskSecureStore.MIN_PIN_LENGTH
 
     AlertDialog(
         onDismissRequest = onDismiss,

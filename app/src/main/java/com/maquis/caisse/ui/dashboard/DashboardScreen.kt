@@ -42,6 +42,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.common.MoneyFormat
 import com.maquis.caisse.domain.model.CaisseDuJour
+import com.maquis.caisse.ui.charts.CustomPeriodPickers
+import com.maquis.caisse.ui.charts.PeriodSelector
 import com.maquis.caisse.domain.model.WaitressStats
 import com.maquis.caisse.ui.common.GlassCard
 import com.maquis.caisse.ui.common.PageHeader
@@ -62,7 +64,8 @@ private val ChartPalette = listOf(
 
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
-    val stats by viewModel.stats.collectAsStateWithLifecycle()
+    val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val stats = ui.stats
     var selectedWaitressId by remember { mutableStateOf<Long?>(null) }
 
     Column(
@@ -74,9 +77,18 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
     ) {
         PageHeader(
             title = "Tableau de bord",
-            subtitle = "Aujourd'hui — graphes en haut, chiffres en bas",
+            subtitle = "${ui.period.label} — CA, coûts et bénéfices",
             actionLabel = "Actualiser",
             onAction = viewModel::refresh,
+        )
+        PeriodSelector(selected = ui.period, onSelect = viewModel::onPeriod)
+        CustomPeriodPickers(
+            period = ui.period,
+            customDayMs = ui.customDayMs,
+            customFromMs = ui.customFromMs,
+            customToMs = ui.customToMs,
+            onCustomDay = viewModel::onCustomDay,
+            onCustomRange = viewModel::onCustomRange,
         )
 
         val s = stats
@@ -86,6 +98,15 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
         }
 
         CaisseDuJourCard(s.caisseDuJour)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            KpiChip("Coût d'achat", MoneyFormat.format(s.costOfGoods), Modifier.weight(1f), GestionWarning)
+            KpiChip(
+                "Bénéfice",
+                "${MoneyFormat.format(s.benefice)} (${s.marginPercent} %)",
+                Modifier.weight(1f),
+                GestionSuccess,
+            )
+        }
 
         GlassCard {
             Text("Ventes par serveuse", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

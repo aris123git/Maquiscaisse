@@ -209,7 +209,7 @@ fun LoginScreen(
                     modifier = Modifier.padding(28.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Text("NexaPOS", style = MaterialTheme.typography.headlineMedium, color = GestionBlue)
+                    Text("NexaGes", style = MaterialTheme.typography.headlineMedium, color = GestionBlue)
                     Text(
                         "Touche ton compte, puis saisis ton code PIN.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

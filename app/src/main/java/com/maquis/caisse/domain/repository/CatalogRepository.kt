@@ -36,6 +36,12 @@ interface UserRepository {
 
 interface StockRepository {
     fun observeMovements(limit: Int = 200): Flow<List<StockMovement>>
+    suspend fun listMovementsByType(
+        type: String,
+        fromMs: Long,
+        toMs: Long,
+        userId: Long? = null,
+    ): List<StockMovement>
     suspend fun adjust(
         productId: Long,
         type: String,
@@ -45,6 +51,22 @@ interface StockRepository {
         comment: String? = null,
         absoluteNewStock: Int? = null,
     )
+}
+
+interface ExpenseRepository {
+    suspend fun add(description: String, amount: Long, category: String?): Long
+    suspend fun listBetween(fromMs: Long, toMs: Long): List<com.maquis.caisse.domain.model.Expense>
+    suspend fun totalBetween(fromMs: Long, toMs: Long): Long
+    suspend fun listByUserAndDateRange(
+        userId: Long,
+        fromMs: Long,
+        toMs: Long,
+    ): List<com.maquis.caisse.domain.model.Expense>
+    suspend fun totalByUserAndDateRange(
+        userId: Long,
+        fromMs: Long,
+        toMs: Long,
+    ): Long
 }
 
 interface SettingsRepository {

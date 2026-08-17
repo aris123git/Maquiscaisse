@@ -113,13 +113,27 @@ class EscPosPrinter @Inject constructor(
                     } catch (e: Exception) {
                         // essayer une socket insecure si disponible
                         try {
+                            runCatching { adapter.cancelDiscovery() }
                             val insecure = device.createInsecureRfcommSocketToServiceRecord(sppUuid)
                             insecure.connect()
                             socket = insecure
                             triedInsecure = true
                         } catch (e2: Exception) {
-                            // Si échec, relancer l'exception pour le retry
-                            throw e2
+                            // Dernier recours : RFCOMM canal 1 (imprimantes cheap / tablettes)
+                            try {
+                                runCatching { adapter.cancelDiscovery() }
+                                runCatching { socket?.close() }
+                                val method = device.javaClass.getMethod(
+                                    "createRfcommSocket",
+                                    Int::class.javaPrimitiveType,
+                                )
+                                @Suppress("UNCHECKED_CAST")
+                                val channel1 = method.invoke(device, 1) as BluetoothSocket
+                                channel1.connect()
+                                socket = channel1
+                            } catch (e3: Exception) {
+                                throw e3
+                            }
                         }
                     }
 
@@ -210,7 +224,7 @@ class EscPosPrinter @Inject constructor(
 
     private suspend fun buildSessionClosureTicket(session: CaisseSession): List<String> {
         val width = settings.get(SettingsKeys.PRINT_WIDTH, "58").toIntOrNull() ?: 58
-        val shop = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse")
+        val shop = settings.get(SettingsKeys.SHOP_NAME, "NexaGes")
         val address = settings.get(SettingsKeys.SHOP_ADDRESS, "")
         val phone = settings.get(SettingsKeys.SHOP_PHONE, "")
         val df = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
@@ -250,7 +264,7 @@ class EscPosPrinter @Inject constructor(
 
     private suspend fun buildTestTicket(): List<String> {
         val width = settings.get(SettingsKeys.PRINT_WIDTH, "58").toIntOrNull() ?: 58
-        val name = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse")
+        val name = settings.get(SettingsKeys.SHOP_NAME, "NexaGes")
         return listOf(
             center(name, width),
             center("TEST IMPRESSION", width),
@@ -262,7 +276,7 @@ class EscPosPrinter @Inject constructor(
 
     private suspend fun buildOrderTicket(order: Order): List<String> {
         val width = settings.get(SettingsKeys.PRINT_WIDTH, "58").toIntOrNull() ?: 58
-        val shop = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse")
+        val shop = settings.get(SettingsKeys.SHOP_NAME, "NexaGes")
         val address = settings.get(SettingsKeys.SHOP_ADDRESS, "")
         val phone = settings.get(SettingsKeys.SHOP_PHONE, "")
         val footer = settings.get(SettingsKeys.TICKET_FOOTER, "Merci pour votre visite.")

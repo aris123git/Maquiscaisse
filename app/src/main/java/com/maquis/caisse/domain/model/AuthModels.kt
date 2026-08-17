@@ -16,16 +16,16 @@ object Permissions {
     const val MANAGE_SETTINGS = "modifier_parametres"
     const val MANAGE_CATEGORIES = "gerer_categories"
     const val MANAGE_TABLES = "gerer_tables"
+    const val MANAGE_EXPENSES = "gerer_depenses"
 
     val ALL = listOf(
         SELL, CREATE_PRODUCT, EDIT_PRODUCT, EDIT_PRICE, ADD_STOCK, CORRECT_STOCK,
         CANCEL_ORDER, MARK_PAID, VIEW_HISTORY, VIEW_RECEIPTS, VIEW_REPORTS,
-        MANAGE_USERS, MANAGE_SETTINGS, MANAGE_CATEGORIES, MANAGE_TABLES,
+        MANAGE_USERS, MANAGE_SETTINGS, MANAGE_CATEGORIES, MANAGE_TABLES, MANAGE_EXPENSES,
     )
-
     val ADMIN_DEFAULT = ALL
     val CAISSIER_DEFAULT = listOf(
-        SELL, MARK_PAID, VIEW_HISTORY, ADD_STOCK, CREATE_PRODUCT, EDIT_PRODUCT,
+        SELL, MARK_PAID, VIEW_HISTORY, ADD_STOCK,
     )
     val SERVEUSE_DEFAULT = listOf(SELL, VIEW_HISTORY)
 }
@@ -39,8 +39,20 @@ data class AppUser(
     val isActive: Boolean = true,
     val isWaitress: Boolean = false,
 ) {
-    fun can(permission: String): Boolean =
-        role == "ADMIN" || permission in permissions
+    /**
+     * Droits effectifs : permissions stockées + droits par défaut du rôle
+     * (évite qu'un caissier créé/ancien perde « marquer payé »).
+     */
+    fun can(permission: String): Boolean {
+        if (role == "ADMIN") return true
+        if (permission in permissions) return true
+        val roleDefaults = when (role) {
+            "CAISSIER" -> Permissions.CAISSIER_DEFAULT
+            "SERVEUSE" -> Permissions.SERVEUSE_DEFAULT
+            else -> emptyList()
+        }
+        return permission in roleDefaults
+    }
 }
 
 data class DiningTable(
@@ -72,8 +84,28 @@ data class StockMovement(
     val motif: String,
     val supplier: String? = null,
     val comment: String? = null,
+    val userId: Long? = null,
     val userName: String? = null,
     val createdAtEpochMs: Long,
+)
+
+data class Expense(
+    val id: Long = 0L,
+    val description: String,
+    val amount: Long,
+    val category: String? = null,
+    val userId: Long? = null,
+    val userName: String = "",
+    val createdAtEpochMs: Long,
+)
+
+val ExpenseCategories = listOf(
+    "Achat marchandise",
+    "Transport",
+    "Salaire",
+    "Loyer",
+    "Électricité",
+    "Autre",
 )
 
 data class AuditEntry(

@@ -71,6 +71,19 @@ class CaisseSessionRepositoryImpl @Inject constructor(
     override fun observeRecent(): Flow<List<CaisseSession>> =
         dao.observeRecent().map { list -> list.map { it.toDomain() } }
 
+    override suspend fun listOpenedBetween(
+        fromMs: Long,
+        toMs: Long,
+        userId: Long?,
+    ): List<CaisseSession> {
+        val rows = if (userId != null) {
+            dao.listByUserAndOpenedBetween(userId, fromMs, toMs)
+        } else {
+            dao.listOpenedBetween(fromMs, toMs)
+        }
+        return rows.map { it.toDomain() }
+    }
+
     private fun CaisseSessionEntity.toDomain() = CaisseSession(
         id             = id,
         userId         = userId,

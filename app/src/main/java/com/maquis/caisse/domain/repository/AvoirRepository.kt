@@ -1,6 +1,7 @@
 package com.maquis.caisse.domain.repository
 
 import com.maquis.caisse.domain.model.Avoir
+import com.maquis.caisse.domain.model.AvoirLine
 import kotlinx.coroutines.flow.Flow
 
 interface AvoirRepository {
@@ -14,5 +15,7 @@ interface AvoirRepository {
         userId: Long?,
         userName: String,
         note: String,
+        items: List<AvoirLine> = emptyList(),
+        restoreStock: Boolean = true,
     ): Avoir
 }

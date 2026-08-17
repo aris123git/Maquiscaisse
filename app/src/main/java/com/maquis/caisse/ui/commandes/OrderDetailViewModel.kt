@@ -155,8 +155,15 @@ class OrderDetailViewModel @Inject constructor(
     /**
      * @param amountReceived montant reçu (pour espèces / partiel)
      * @param payFull si true, encaisse le reste (avec monnaie si reçu > reste)
+     * @param putRemainderAsDebt si true avec partiel : le reste part en dette
      */
-    fun markPaid(mode: PaymentMode, amountReceived: Long, payFull: Boolean) {
+    fun markPaid(
+        mode: PaymentMode,
+        amountReceived: Long,
+        payFull: Boolean,
+        putRemainderAsDebt: Boolean = false,
+        debtCustomerName: String = "",
+    ) {
         if (!session.can(Permissions.MARK_PAID)) {
             _ui.update { it.copy(error = "Permission insuffisante") }
             return
@@ -165,40 +172,98 @@ class OrderDetailViewModel @Inject constructor(
         val remaining = order.remainingAmount
         if (remaining <= 0L) return
 
-        val payAmount: Long
-        val tendered: Long
-        if (payFull) {
-            payAmount = remaining
-            tendered = if (mode == PaymentMode.CASH) {
-                amountReceived.coerceAtLeast(remaining)
-            } else {
-                remaining
+        viewModelScope.launch {
+            _ui.update { it.copy(isBusy = true, error = null) }
+            try {
+                val updated = if (!payFull && putRemainderAsDebt) {
+                    val payAmount = amountReceived.coerceAtMost(remaining).coerceAtLeast(0L)
+                    if (payAmount <= 0L) error("Montant invalide")
+                    val tendered = if (mode == PaymentMode.CASH) amountReceived else payAmount
+                    if (payAmount >= remaining) {
+                        orderRepository.payOrder(
+                            orderId = order.id,
+                            mode = mode,
+                            amount = payAmount,
+                            amountTendered = tendered,
+                        )
+                    } else {
+                        orderRepository.payPartialWithDebtRemainder(
+                            orderId = order.id,
+                            paidMode = mode,
+                            paidAmount = payAmount,
+                            amountTendered = tendered,
+                            debtCustomerName = debtCustomerName,
+                        )
+                    }
+                } else {
+                    val payAmount: Long
+                    val tendered: Long
+                    if (payFull) {
+                        payAmount = remaining
+                        tendered = if (mode == PaymentMode.CASH) {
+                            amountReceived.coerceAtLeast(remaining)
+                        } else {
+                            remaining
+                        }
+                    } else {
+                        payAmount = amountReceived.coerceAtMost(remaining).coerceAtLeast(0L)
+                        tendered = if (mode == PaymentMode.CASH) amountReceived else payAmount
+                    }
+                    if (payAmount <= 0L) error("Montant invalide")
+                    orderRepository.payOrder(
+                        orderId = order.id,
+                        mode = mode,
+                        amount = payAmount,
+                        amountTendered = tendered,
+                    )
+                }
+                val fullyPaid = updated.status == OrderStatus.PAYEE
+                val msg = when {
+                    fullyPaid && putRemainderAsDebt && !payFull ->
+                        "Paiement enregistré — reste mis en dette"
+                    fullyPaid -> "Commande payée"
+                    else -> "Paiement partiel enregistré"
+                }
+                _ui.update {
+                    it.copy(
+                        order = updated,
+                        isBusy = false,
+                        message = msg,
+                        navigateToOpenOrders = fullyPaid,
+                    )
+                }
+            } catch (e: Exception) {
+                _ui.update { it.copy(isBusy = false, error = e.message) }
             }
-        } else {
-            payAmount = amountReceived.coerceAtMost(remaining).coerceAtLeast(0L)
-            tendered = if (mode == PaymentMode.CASH) amountReceived else payAmount
         }
-        if (payAmount <= 0L) {
-            _ui.update { it.copy(error = "Montant invalide") }
+    }
+
+    /** Met tout le reste de la commande en dette. */
+    fun putRemainingOnDebt(customerName: String) {
+        if (!session.can(Permissions.MARK_PAID)) {
+            _ui.update { it.copy(error = "Permission insuffisante") }
             return
         }
+        val order = _ui.value.order ?: return
+        val remaining = order.remainingAmount
+        if (remaining <= 0L) return
 
         viewModelScope.launch {
             _ui.update { it.copy(isBusy = true, error = null) }
             try {
                 val updated = orderRepository.payOrder(
                     orderId = order.id,
-                    mode = mode,
-                    amountTendered = tendered,
-                    amount = payAmount,
+                    mode = PaymentMode.DEBT,
+                    amount = remaining,
+                    amountTendered = 0L,
+                    debtCustomerName = customerName,
                 )
-                val fullyPaid = updated.status == OrderStatus.PAYEE
                 _ui.update {
                     it.copy(
                         order = updated,
                         isBusy = false,
-                        message = if (fullyPaid) "Commande payée" else "Paiement partiel enregistré",
-                        navigateToOpenOrders = fullyPaid,
+                        message = "Reste mis en dette",
+                        navigateToOpenOrders = updated.status == OrderStatus.PAYEE,
                     )
                 }
             } catch (e: Exception) {

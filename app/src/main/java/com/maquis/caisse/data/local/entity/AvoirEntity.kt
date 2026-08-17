@@ -16,6 +16,8 @@ data class AvoirEntity(
     @ColumnInfo(name = "customer_name") val customerName: String = "",
     val reason: String,
     val amount: Long,
+    /** CASH = montant libre ; PRODUCT = lignes produits. */
+    @ColumnInfo(name = "avoir_type", defaultValue = "CASH") val avoirType: String = "CASH",
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "user_id") val userId: Long? = null,
     @ColumnInfo(name = "user_name") val userName: String = "",

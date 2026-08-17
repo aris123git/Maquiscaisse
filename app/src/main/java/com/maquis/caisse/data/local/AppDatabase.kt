@@ -18,6 +18,7 @@ import com.maquis.caisse.data.local.dao.UserDao
 import com.maquis.caisse.data.local.entity.AppSettingEntity
 import com.maquis.caisse.data.local.entity.AuditLogEntity
 import com.maquis.caisse.data.local.entity.AvoirEntity
+import com.maquis.caisse.data.local.entity.AvoirItemEntity
 import com.maquis.caisse.data.local.entity.CaisseSessionEntity
 import com.maquis.caisse.data.local.entity.CategoryEntity
 import com.maquis.caisse.data.local.entity.DettePaiementEntity
@@ -34,9 +35,10 @@ import com.maquis.caisse.data.local.entity.StockMovementEntity
 import com.maquis.caisse.data.local.entity.UserEntity
 
 /**
- * Schéma Room courant : **version 7**.
+ * Schéma Room courant : **version 8**.
  * - v6 : sessions + dettes/avoirs
  * - v7 : + `expenses`
+ * - v8 : + `avoir_items` + `avoir_type`
  */
 @Database(
     entities = [
@@ -56,9 +58,10 @@ import com.maquis.caisse.data.local.entity.UserEntity
         DetteEntity::class,
         DettePaiementEntity::class,
         AvoirEntity::class,
+        AvoirItemEntity::class,
         ExpenseEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

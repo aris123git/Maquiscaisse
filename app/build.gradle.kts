@@ -13,8 +13,8 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 26
-        versionName = "0.8.12-admin-suivi-expenses"
+        versionCode = 27
+        versionName = "0.8.13-mouvements-stock"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

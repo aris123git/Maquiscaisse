@@ -115,3 +115,19 @@ data class DashboardStats(
         get() = if (caGenerated <= 0L) 0
         else ((benefice * 100L) / caGenerated).toInt()
 }
+
+/** CA / bénéfice pour un caissier (orders.created_by_user_id) sur une période. */
+data class CashierPeriodStats(
+    val ca: Long,
+    val costOfGoods: Long,
+    val benefice: Long,
+    val orderCount: Int,
+)
+
+data class CaisseSessionInfo(
+    val id: Long,
+    val userId: Long,
+    val userName: String,
+    val openedAt: Long,
+    val closedAt: Long?,
+)

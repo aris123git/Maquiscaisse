@@ -35,7 +35,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.maquis.caisse.core.SessionManager
-import com.maquis.caisse.domain.model.Permissions
 import com.maquis.caisse.kiosk.KioskManager
 import com.maquis.caisse.navigation.Routes
 import com.maquis.caisse.ui.theme.GestionBlue
@@ -50,7 +49,6 @@ private data class NavItem(
     val route: String,
     val label: String,
     val adminOnly: Boolean = false,
-    val requiresReports: Boolean = false,
 )
 
 @HiltViewModel
@@ -61,9 +59,6 @@ class SideBarViewModel @Inject constructor(
     val currentUser = session.currentUser
 
     fun isAdmin(): Boolean = session.userOrNull()?.role == "ADMIN"
-
-    fun canViewReports(): Boolean =
-        isAdmin() || session.can(Permissions.VIEW_REPORTS)
 
     fun logout() {
         session.logout()
@@ -81,7 +76,6 @@ fun MaquisSideBar(
     val currentRoute = navBackStackEntry?.destination?.route
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
     val isAdmin = viewModel.isAdmin()
-    val canViewReports = viewModel.canViewReports()
 
     val items = listOf(
         NavItem(Routes.CAISSE, "Caisse"),
@@ -93,13 +87,11 @@ fun MaquisSideBar(
         NavItem(Routes.CATEGORIES, "Catégories", adminOnly = true),
         NavItem(Routes.TABLES, "Tables", adminOnly = true),
         NavItem(Routes.STOCK, "Stock"),
+        NavItem(Routes.SUIVI_ADMIN, "Mouvements"),
         NavItem(Routes.RAPPORTS, "Rapports"),
-        NavItem(Routes.SUIVI_ADMIN, "Suivi admin", requiresReports = true),
         NavItem(Routes.UTILISATEURS, "Utilisateurs", adminOnly = true),
         NavItem(Routes.PARAMETRES, "Paramètres"),
-    ).filter {
-        (!it.adminOnly || isAdmin) && (!it.requiresReports || canViewReports)
-    }
+    ).filter { !it.adminOnly || isAdmin }
 
     val screenWidth = LocalConfiguration.current.screenWidthDp
     val sidebarWidth = when {

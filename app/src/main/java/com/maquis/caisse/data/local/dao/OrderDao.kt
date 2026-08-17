@@ -66,6 +66,21 @@ interface OrderDao {
     @Query(
         """
         SELECT * FROM orders
+        WHERE created_at BETWEEN :fromMs AND :toMs
+          AND (:cashierId IS NULL OR created_by_user_id = :cashierId)
+          AND status != 'ANNULEE'
+        ORDER BY created_at DESC
+        """,
+    )
+    suspend fun listByCashierBetween(
+        fromMs: Long,
+        toMs: Long,
+        cashierId: Long?,
+    ): List<OrderEntity>
+
+    @Query(
+        """
+        SELECT * FROM orders
         WHERE (:status IS NULL OR status = :status)
           AND (:waitressId IS NULL OR waitress_id = :waitressId)
           AND (:query = '' OR public_id LIKE '%' || :query || '%'

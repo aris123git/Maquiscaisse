@@ -44,4 +44,30 @@ interface CaisseSessionDao {
 
     @Query("SELECT * FROM caisse_sessions ORDER BY opened_at DESC LIMIT 30")
     fun observeRecent(): Flow<List<CaisseSessionEntity>>
+
+    @Query(
+        """
+        SELECT * FROM caisse_sessions
+        WHERE user_id = :userId
+          AND opened_at BETWEEN :start AND :end
+        ORDER BY opened_at ASC
+        """,
+    )
+    suspend fun listByUserAndOpenedBetween(
+        userId: Long,
+        start: Long,
+        end: Long,
+    ): List<CaisseSessionEntity>
+
+    @Query(
+        """
+        SELECT * FROM caisse_sessions
+        WHERE opened_at BETWEEN :start AND :end
+        ORDER BY opened_at ASC
+        """,
+    )
+    suspend fun listOpenedBetween(
+        start: Long,
+        end: Long,
+    ): List<CaisseSessionEntity>
 }

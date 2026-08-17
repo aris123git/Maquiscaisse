@@ -36,6 +36,20 @@ class StockRepositoryImpl @Inject constructor(
         movementDao.listFiltered(fromMs, toMs, userId, type).map { it.toDomain() }
     }
 
+    override suspend fun listMovementsByType(
+        type: String,
+        fromMs: Long,
+        toMs: Long,
+        userId: Long?,
+    ): List<StockMovement> = withContext(Dispatchers.IO) {
+        val rows = if (userId != null) {
+            movementDao.listByTypeUserAndRange(type, userId, fromMs, toMs)
+        } else {
+            movementDao.listByTypeAndRange(type, fromMs, toMs)
+        }
+        rows.map { it.toDomain() }
+    }
+
     override suspend fun adjust(
         productId: Long,
         type: String,

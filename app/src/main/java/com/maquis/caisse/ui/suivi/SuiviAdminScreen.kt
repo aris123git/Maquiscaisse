@@ -1,7 +1,6 @@
 package com.maquis.caisse.ui.suivi
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +20,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -28,7 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maquis.caisse.common.MoneyFormat
-import com.maquis.caisse.domain.model.Expense
 import com.maquis.caisse.domain.model.ExpenseCategories
 import com.maquis.caisse.domain.model.StockMovement
 import com.maquis.caisse.ui.charts.CustomPeriodPickers
@@ -38,33 +37,17 @@ import com.maquis.caisse.ui.common.PageHeader
 import com.maquis.caisse.ui.common.PillTone
 import com.maquis.caisse.ui.common.TextPill
 import com.maquis.caisse.ui.theme.GestionSuccess
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-private val MOVEMENT_TYPES = listOf("ENTREE", "VENTE", "INVENTAIRE", "SORTIE", "CORRECTION")
+import kotlinx.coroutines.delay
 
 @Composable
 fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val users by viewModel.users.collectAsStateWithLifecycle()
 
-    if (!ui.canAccess) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                "Accès réservé à l'administrateur (permission voir_rapports).",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(24.dp),
-            )
-        }
-        return
-    }
-
     val message = ui.error ?: ui.success
     LaunchedEffect(message) {
         if (message != null) {
-            kotlinx.coroutines.delay(2_500)
+            delay(2_500)
             viewModel.consumeMessage()
         }
     }
@@ -81,21 +64,33 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PageHeader(
-                title = "Suivi admin",
-                subtitle = "Mouvements de stock et dépenses",
+                title = "Mouvements de stock",
+                subtitle = if (ui.isAdmin) {
+                    "Par caissier et période"
+                } else {
+                    "Vos mouvements et dépenses"
+                },
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (ui.canManageExpenses) {
-                    TextButton(onClick = viewModel::openAddExpense) { Text("Nouvelle dépense") }
-                }
-                TextButton(onClick = viewModel::refresh) { Text("Actualiser") }
-            }
+            TextButton(onClick = viewModel::refresh) { Text("Actualiser") }
         }
 
         if (message != null) {
             TextPill(
                 message,
                 if (ui.error != null) PillTone.DANGER else PillTone.SUCCESS,
+            )
+        }
+
+        if (ui.isAdmin) {
+            DropdownField(
+                label = "Caissier",
+                selected = users.firstOrNull { it.id == ui.selectedUserId },
+                options = users,
+                optionLabel = { it.name },
+                onSelect = { viewModel.setSelectedUser(it?.id) },
+                allowNull = true,
+                nullLabel = "Tous",
+                modifier = Modifier.fillMaxWidth(),
             )
         }
 
@@ -110,7 +105,7 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SuiviTab.entries.forEach { tab ->
+            MouvementsTab.entries.forEach { tab ->
                 FilterChip(
                     selected = ui.tab == tab,
                     onClick = { viewModel.selectTab(tab) },
@@ -119,84 +114,91 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
             }
         }
 
-        when (ui.tab) {
-            SuiviTab.STOCK -> {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    DropdownField(
-                        label = "Caissier",
-                        selected = users.firstOrNull { it.id == ui.filterUserId },
-                        options = users,
-                        optionLabel = { it.name },
-                        onSelect = { viewModel.setFilterUser(it?.id) },
-                        allowNull = true,
-                        nullLabel = "Tous",
-                        modifier = Modifier.weight(1f),
-                    )
-                    DropdownField(
-                        label = "Type",
-                        selected = ui.filterMovementType,
-                        options = MOVEMENT_TYPES,
-                        optionLabel = { it },
-                        onSelect = viewModel::setFilterMovementType,
-                        allowNull = true,
-                        nullLabel = "Tous",
-                        modifier = Modifier.weight(1f),
-                    )
+        if (ui.tab == MouvementsTab.SORTIE) {
+            FinancialSummary(
+                ca = ui.ca,
+                benefice = ui.benefice,
+                expensesTotal = ui.expensesTotal,
+                caAfterExpenses = ui.caAfterExpenses,
+                onAddExpense = viewModel::openAddExpense,
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            if (ui.flatMode) {
+                items(ui.flatMovements, key = { it.id }) { movement ->
+                    MinimalMovementRow(movement)
                 }
-                TextPill(
-                    "${ui.movements.size} mouvement(s)",
-                    PillTone.INFO,
-                )
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    items(ui.movements, key = { it.id }) { movement ->
-                        MovementRow(movement)
-                        HorizontalDivider()
+                if (ui.flatMovements.isEmpty() && !ui.loading) {
+                    item {
+                        Text(
+                            "Aucun mouvement sur cette période.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp),
+                        )
                     }
-                    if (ui.movements.isEmpty() && !ui.loading) {
-                        item {
+                }
+            } else {
+                ui.groups.forEach { group ->
+                    item(key = "h-${group.title}") {
+                        Column(modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)) {
                             Text(
-                                "Aucun mouvement sur cette période.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(12.dp),
+                                group.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
                             )
+                            group.subtitle?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
+                    }
+                    items(group.movements, key = { it.id }) { movement ->
+                        MinimalMovementRow(movement)
+                    }
+                    item(key = "d-${group.title}") { HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp)) }
+                }
+                if (ui.groups.isEmpty() && !ui.loading) {
+                    item {
+                        Text(
+                            "Aucun mouvement sur cette période.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp),
+                        )
                     }
                 }
             }
-            SuiviTab.EXPENSES -> {
-                Text(
-                    "Total dépenses : ${MoneyFormat.format(ui.expensesTotal)}",
-                    fontWeight = FontWeight.Bold,
-                    color = GestionSuccess,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                TextPill("${ui.expenses.size} dépense(s)", PillTone.INFO)
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    items(ui.expenses, key = { it.id }) { expense ->
-                        ExpenseRow(expense)
-                        HorizontalDivider()
-                    }
-                    if (ui.expenses.isEmpty() && !ui.loading) {
-                        item {
-                            Text(
-                                "Aucune dépense sur cette période.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(12.dp),
-                            )
-                        }
+
+            if (ui.tab == MouvementsTab.SORTIE && ui.expenses.isNotEmpty()) {
+                item {
+                    Text(
+                        "Dépenses de la période",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                    )
+                }
+                items(ui.expenses, key = { "e-${it.id}" }) { expense ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            listOfNotNull(expense.description, expense.category, expense.userName.ifBlank { null })
+                                .joinToString(" · "),
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(MoneyFormat.format(expense.amount), fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -218,64 +220,55 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun MovementRow(movement: StockMovement) {
-    val timeFmt = rememberTimeFmt()
+private fun FinancialSummary(
+    ca: Long,
+    benefice: Long,
+    expensesTotal: Long,
+    caAfterExpenses: Long,
+    onAddExpense: () -> Unit,
+) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+        Text("CA : ${MoneyFormat.format(ca)}", fontWeight = FontWeight.Bold)
+        Text(
+            "Bénéfice : ${MoneyFormat.format(benefice)}",
+            fontWeight = FontWeight.Bold,
+            color = GestionSuccess,
+        )
+        Text("Dépenses : ${MoneyFormat.format(expensesTotal)}", fontWeight = FontWeight.Bold)
+        Text(
+            "CA après dépenses : ${MoneyFormat.format(caAfterExpenses)}",
+            fontWeight = FontWeight.Bold,
+        )
+        Button(
+            onClick = onAddExpense,
+            modifier = Modifier.padding(top = 4.dp),
         ) {
-            Text(
-                movement.userName?.ifBlank { "—" } ?: "—",
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                timeFmt.format(Date(movement.createdAtEpochMs)),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text("Ajouter une dépense")
         }
-        Text(
-            "${movement.productName} · ${movement.type} × ${movement.quantity}",
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            "Stock ${movement.previousStock} → ${movement.newStock}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
 @Composable
-private fun ExpenseRow(expense: Expense) {
-    val timeFmt = rememberTimeFmt()
-    Column(
+private fun MinimalMovementRow(movement: StockMovement) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(expense.description, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text(MoneyFormat.format(expense.amount), fontWeight = FontWeight.Bold)
-        }
         Text(
-            listOfNotNull(
-                expense.category,
-                expense.userName.ifBlank { null }?.let { "par $it" },
-                timeFmt.format(Date(expense.createdAtEpochMs)),
-            ).joinToString(" · "),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            movement.productName,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            "${movement.previousStock} → ${movement.newStock}",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
@@ -331,9 +324,3 @@ private fun AddExpenseDialog(
         },
     )
 }
-
-@Composable
-private fun rememberTimeFmt(): SimpleDateFormat =
-    androidx.compose.runtime.remember {
-        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
-    }

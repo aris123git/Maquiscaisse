@@ -43,6 +43,22 @@ class ExpenseRepositoryImpl @Inject constructor(
             expenseDao.totalBetween(fromMs, toMs)
         }
 
+    override suspend fun listByUserAndDateRange(
+        userId: Long,
+        fromMs: Long,
+        toMs: Long,
+    ): List<Expense> = withContext(Dispatchers.IO) {
+        expenseDao.listByUserAndDateRange(userId, fromMs, toMs).map { it.toDomain() }
+    }
+
+    override suspend fun totalByUserAndDateRange(
+        userId: Long,
+        fromMs: Long,
+        toMs: Long,
+    ): Long = withContext(Dispatchers.IO) {
+        expenseDao.totalByUserAndDateRange(userId, fromMs, toMs)
+    }
+
     private fun ExpenseEntity.toDomain() = Expense(
         id = id,
         description = description,

@@ -37,4 +37,10 @@ interface OrderRepository {
     suspend fun categorySales(fromMs: Long, toMs: Long, waitressId: Long?): List<CategorySalesRow>
     suspend fun productSales(fromMs: Long, toMs: Long, waitressId: Long?): List<ProductSalesRow>
     suspend fun dashboard(fromMs: Long, toMs: Long): DashboardStats
+    /** CA / bénéfice filtré par caissier (`orders.created_by_user_id`). */
+    suspend fun cashierPeriodStats(
+        fromMs: Long,
+        toMs: Long,
+        cashierId: Long?,
+    ): com.maquis.caisse.domain.model.CashierPeriodStats
 }

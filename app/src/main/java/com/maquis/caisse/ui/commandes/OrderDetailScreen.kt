@@ -52,6 +52,7 @@ import com.maquis.caisse.ui.common.GlassCard
 import com.maquis.caisse.ui.common.PillTone
 import com.maquis.caisse.ui.common.TextPill
 import com.maquis.caisse.ui.theme.GestionBlue
+import com.maquis.caisse.ui.theme.GestionWarning
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,6 +67,7 @@ fun OrderDetailScreen(
 ) {
     val state by viewModel.ui.collectAsStateWithLifecycle()
     var showPay by remember { mutableStateOf(false) }
+    var showDebt by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val df = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE) }
 
@@ -154,6 +156,7 @@ fun OrderDetailScreen(
                             onCancelEdit = viewModel::cancelEdit,
                             onCancelOrder = viewModel::cancelOrder,
                             onMarkPaid = { showPay = true },
+                            onPutDebt = { showDebt = true },
                             onPrint = viewModel::printTicket,
                         )
                     }
@@ -183,6 +186,7 @@ fun OrderDetailScreen(
                         onCancelEdit = viewModel::cancelEdit,
                         onCancelOrder = viewModel::cancelOrder,
                         onMarkPaid = { showPay = true },
+                        onPutDebt = { showDebt = true },
                         onPrint = viewModel::printTicket,
                     )
                 }
@@ -192,12 +196,34 @@ fun OrderDetailScreen(
 
     if (showPay) {
         val remaining = state.order?.remainingAmount ?: 0L
+        val defaultCustomer = state.order?.waitressName.orEmpty()
         PayOrderDialog(
             remaining = remaining,
+            defaultCustomerName = defaultCustomer,
             onDismiss = { showPay = false },
-            onConfirm = { mode, received, full ->
+            onConfirm = { mode, received, full, remainderDebt, customer ->
                 showPay = false
-                viewModel.markPaid(mode, received, full)
+                viewModel.markPaid(
+                    mode = mode,
+                    amountReceived = received,
+                    payFull = full,
+                    putRemainderAsDebt = remainderDebt,
+                    debtCustomerName = customer,
+                )
+            },
+        )
+    }
+
+    if (showDebt) {
+        val remaining = state.order?.remainingAmount ?: 0L
+        val defaultCustomer = state.order?.waitressName.orEmpty()
+        PutOnDebtDialog(
+            remaining = remaining,
+            defaultCustomerName = defaultCustomer,
+            onDismiss = { showDebt = false },
+            onConfirm = { customer ->
+                showDebt = false
+                viewModel.putRemainingOnDebt(customer)
             },
         )
     }
@@ -294,6 +320,7 @@ private fun OrderActions(
     onCancelEdit: () -> Unit,
     onCancelOrder: () -> Unit,
     onMarkPaid: () -> Unit,
+    onPutDebt: () -> Unit,
     onPrint: () -> Unit,
 ) {
     if (order.isOpen) {
@@ -303,6 +330,12 @@ private fun OrderActions(
                     onClick = onMarkPaid,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                 ) { Text("MARQUER COMME PAYÉ", fontWeight = FontWeight.Bold) }
+                OutlinedButton(
+                    onClick = onPutDebt,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Text("METTRE EN DETTE", fontWeight = FontWeight.Bold, color = GestionWarning)
+                }
             }
             if (canModifyOrCancel) {
                 OutlinedButton(
@@ -335,16 +368,57 @@ private fun OrderActions(
 }
 
 @Composable
+private fun PutOnDebtDialog(
+    remaining: Long,
+    defaultCustomerName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var customer by remember { mutableStateOf(defaultCustomerName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Mettre en dette") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Montant : ${MoneyFormat.format(remaining)}", fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = customer,
+                    onValueChange = { customer = it },
+                    label = { Text("Nom du client") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(customer.trim()) },
+                enabled = remaining > 0L,
+            ) { Text("Valider") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
+}
+
+@Composable
 private fun PayOrderDialog(
     remaining: Long,
+    defaultCustomerName: String,
     onDismiss: () -> Unit,
-    onConfirm: (PaymentMode, Long, Boolean) -> Unit,
+    onConfirm: (PaymentMode, Long, Boolean, Boolean, String) -> Unit,
 ) {
     var mode by remember { mutableStateOf(PaymentMode.CASH) }
     var amountText by remember(remaining) { mutableStateOf(remaining.toString()) }
     var replaceNext by remember(remaining, mode) { mutableStateOf(true) }
     var partial by remember { mutableStateOf(false) }
+    var remainderAsDebt by remember { mutableStateOf(false) }
+    var customer by remember { mutableStateOf(defaultCustomerName) }
     val received = amountText.filter { it.isDigit() }.toLongOrNull() ?: 0L
+    val debtPart = if (partial && remainderAsDebt && received in 1 until remaining) {
+        remaining - received
+    } else {
+        0L
+    }
     val change = if (!partial && mode == PaymentMode.CASH && received > remaining) {
         received - remaining
     } else {
@@ -355,7 +429,12 @@ private fun PayOrderDialog(
         onDismissRequest = onDismiss,
         title = { Text("Marquer comme payé") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text("Reste à payer : ${MoneyFormat.format(remaining)}")
                 Text("Mode de paiement", fontWeight = FontWeight.SemiBold)
                 PaymentMode.PAYMENT_CHOICES.filter { it != PaymentMode.MIXED }.chunked(3).forEach { row ->
@@ -389,15 +468,42 @@ private fun PayOrderDialog(
                 }
                 FilterChip(
                     selected = partial,
-                    onClick = { partial = !partial },
+                    onClick = {
+                        partial = !partial
+                        if (!partial) remainderAsDebt = false
+                    },
                     label = { Text("Paiement partiel") },
                 )
+                if (partial && received in 1 until remaining) {
+                    FilterChip(
+                        selected = remainderAsDebt,
+                        onClick = { remainderAsDebt = !remainderAsDebt },
+                        label = { Text("Mettre le reste en dette") },
+                    )
+                    if (remainderAsDebt) {
+                        Text(
+                            "Dette : ${MoneyFormat.format(debtPart)}",
+                            color = GestionWarning,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        OutlinedTextField(
+                            value = customer,
+                            onValueChange = { customer = it },
+                            label = { Text("Nom du client (dette)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(mode, received, !partial) },
-                enabled = received > 0L && (partial || received >= remaining || mode != PaymentMode.CASH),
+                onClick = {
+                    onConfirm(mode, received, !partial, remainderAsDebt, customer.trim())
+                },
+                enabled = received > 0L &&
+                    (partial || received >= remaining || mode != PaymentMode.CASH),
             ) { Text("Valider") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },

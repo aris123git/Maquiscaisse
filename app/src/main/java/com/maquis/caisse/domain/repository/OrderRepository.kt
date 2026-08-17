@@ -31,6 +31,18 @@ interface OrderRepository {
         mode: PaymentMode,
         amount: Long,
         amountTendered: Long,
+        debtCustomerName: String? = null,
+    ): Order
+
+    /**
+     * Encaissement partiel puis mise du reste en dette (deux paiements, commande PAYEE).
+     */
+    suspend fun payPartialWithDebtRemainder(
+        orderId: Long,
+        paidMode: PaymentMode,
+        paidAmount: Long,
+        amountTendered: Long,
+        debtCustomerName: String?,
     ): Order
 
     suspend fun waitressStats(fromMs: Long, toMs: Long, waitressId: Long?): List<WaitressStats>

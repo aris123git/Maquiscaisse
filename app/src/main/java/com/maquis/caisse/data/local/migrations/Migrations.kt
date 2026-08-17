@@ -343,4 +343,29 @@ object Migrations {
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_expenses_category` ON `expenses` (`category`)")
         }
     }
+
+    /** Lignes produits sur les avoirs (+ type CASH/PRODUCT). */
+    val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `avoirs` ADD COLUMN `avoir_type` TEXT NOT NULL DEFAULT 'CASH'",
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `avoir_items` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `avoir_id` INTEGER NOT NULL,
+                    `product_id` INTEGER NOT NULL,
+                    `product_name` TEXT NOT NULL,
+                    `unit_price` INTEGER NOT NULL,
+                    `quantity` INTEGER NOT NULL,
+                    `line_total` INTEGER NOT NULL,
+                    FOREIGN KEY(`avoir_id`) REFERENCES `avoirs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_avoir_items_avoir_id` ON `avoir_items` (`avoir_id`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_avoir_items_product_id` ON `avoir_items` (`product_id`)")
+        }
+    }
 }

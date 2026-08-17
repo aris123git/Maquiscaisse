@@ -188,7 +188,22 @@ class OrderRepositoryImpl @Inject constructor(
                 )
                 id
             }
-            getOrder(orderId) ?: error("Commande introuvable")
+            val created = getOrder(orderId) ?: error("Commande introuvable")
+            if (request.markAsPaid &&
+                request.paymentMode == PaymentMode.DEBT &&
+                created.paidAmount > 0L
+            ) {
+                ensureDetteForOrder(
+                    orderId = created.id,
+                    orderPublicId = created.publicId,
+                    debtAmount = created.paidAmount,
+                    customerName = request.waitressName?.takeIf { it.isNotBlank() } ?: "Client",
+                    userId = user.id,
+                    userName = user.name,
+                    now = System.currentTimeMillis(),
+                )
+            }
+            created
         }
 
     override suspend fun updateOrderItems(orderId: Long, lines: List<OrderLine>): Order =
@@ -334,6 +349,7 @@ class OrderRepositoryImpl @Inject constructor(
         mode: PaymentMode,
         amount: Long,
         amountTendered: Long,
+        debtCustomerName: String?,
     ): Order = withContext(Dispatchers.IO) {
         val existing = orderDao.getById(orderId) ?: error("Commande introuvable")
         require(
@@ -389,45 +405,90 @@ class OrderRepositoryImpl @Inject constructor(
                 ),
             )
         }
-        // Création automatique de la dette si mode = DEBT
         if (mode == PaymentMode.DEBT) {
-            val debtAmount = breakdown.totalAmount
-            val orderEntity = existing
-            val existingDette = detteDao.getByOrderId(orderId)
-            if (existingDette != null) {
-                // Consolidate: add the new amount onto the existing debt record and
-                // recompute status so the displayed remaining balance stays correct
-                // (e.g. a previously SETTLED dette must become PARTIAL when new debt arrives).
-                val newOriginal = existingDette.originalAmount + debtAmount
-                val recomputedStatus = when {
-                    existingDette.paidAmount >= newOriginal -> "SETTLED"
-                    existingDette.paidAmount > 0L -> "PARTIAL"
-                    else -> "OPEN"
-                }
-                detteDao.updateDette(
-                    existingDette.copy(
-                        originalAmount = newOriginal,
-                        status = recomputedStatus,
-                    ),
-                )
-            } else {
-                detteDao.insertDette(
-                    DetteEntity(
-                        customerName = orderEntity.waitressName ?: "Client",
-                        orderId = orderId,
-                        orderPublicId = orderEntity.publicId,
-                        originalAmount = debtAmount,
-                        paidAmount = 0L,
-                        status = "OPEN",
-                        createdAt = now,
-                        userId = user.id,
-                        userName = user.name,
-                        note = "Commande ${orderEntity.publicId}",
-                    ),
-                )
-            }
+            ensureDetteForOrder(
+                orderId = orderId,
+                orderPublicId = existing.publicId,
+                debtAmount = breakdown.totalAmount,
+                customerName = debtCustomerName?.takeIf { it.isNotBlank() }
+                    ?: existing.waitressName?.takeIf { it.isNotBlank() }
+                    ?: "Client",
+                userId = user.id,
+                userName = user.name,
+                now = now,
+            )
         }
         getOrder(orderId) ?: error("Commande introuvable")
+    }
+
+    override suspend fun payPartialWithDebtRemainder(
+        orderId: Long,
+        paidMode: PaymentMode,
+        paidAmount: Long,
+        amountTendered: Long,
+        debtCustomerName: String?,
+    ): Order = withContext(Dispatchers.IO) {
+        require(paidMode != PaymentMode.DEBT) { "Le paiement initial ne peut pas être une dette" }
+        require(paidAmount > 0L) { "Montant payé invalide" }
+        payOrder(
+            orderId = orderId,
+            mode = paidMode,
+            amount = paidAmount,
+            amountTendered = amountTendered,
+        )
+        val afterCash = getOrder(orderId) ?: error("Commande introuvable")
+        val remainder = afterCash.remainingAmount
+        if (remainder <= 0L) return@withContext afterCash
+        payOrder(
+            orderId = orderId,
+            mode = PaymentMode.DEBT,
+            amount = remainder,
+            amountTendered = 0L,
+            debtCustomerName = debtCustomerName,
+        )
+    }
+
+    private suspend fun ensureDetteForOrder(
+        orderId: Long,
+        orderPublicId: String,
+        debtAmount: Long,
+        customerName: String,
+        userId: Long?,
+        userName: String,
+        now: Long,
+    ) {
+        if (debtAmount <= 0L) return
+        val existingDette = detteDao.getByOrderId(orderId)
+        if (existingDette != null) {
+            val newOriginal = existingDette.originalAmount + debtAmount
+            val recomputedStatus = when {
+                existingDette.paidAmount >= newOriginal -> "SETTLED"
+                existingDette.paidAmount > 0L -> "PARTIAL"
+                else -> "OPEN"
+            }
+            detteDao.updateDette(
+                existingDette.copy(
+                    originalAmount = newOriginal,
+                    status = recomputedStatus,
+                    customerName = customerName.ifBlank { existingDette.customerName },
+                ),
+            )
+        } else {
+            detteDao.insertDette(
+                DetteEntity(
+                    customerName = customerName.ifBlank { "Client" },
+                    orderId = orderId,
+                    orderPublicId = orderPublicId,
+                    originalAmount = debtAmount,
+                    paidAmount = 0L,
+                    status = "OPEN",
+                    createdAt = now,
+                    userId = userId,
+                    userName = userName,
+                    note = "Commande $orderPublicId",
+                ),
+            )
+        }
     }
 
     override suspend fun waitressStats(fromMs: Long, toMs: Long, waitressId: Long?): List<WaitressStats> =

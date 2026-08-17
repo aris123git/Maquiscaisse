@@ -13,8 +13,8 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 21
         targetSdk = 34
-        versionCode = 16
-        versionName = "0.7.6-nexages-pack"
+        versionCode = 18
+        versionName = "0.7.8-avoirs-menu"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

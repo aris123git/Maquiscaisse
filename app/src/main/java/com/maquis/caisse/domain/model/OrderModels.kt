@@ -81,14 +81,20 @@ data class CategorySalesRow(
     val categoryName: String,
     val quantity: Int,
     val revenue: Long,
-)
+    val cost: Long = 0L,
+) {
+    val benefice: Long get() = revenue - cost
+}
 
 data class ProductSalesRow(
     val productName: String,
     val categoryName: String,
     val quantity: Int,
     val revenue: Long,
-)
+    val cost: Long = 0L,
+) {
+    val benefice: Long get() = revenue - cost
+}
 
 /**
  * Résumé financier du jour affiché dans la carte "Caisse du jour".
@@ -117,11 +123,17 @@ data class DashboardStats(
     val caGenerated: Long,
     val caCollected: Long,
     val toCollect: Long,
+    val costOfGoods: Long = 0L,
+    val benefice: Long = 0L,
     val topProducts: List<ProductSalesRow>,
     val topCategories: List<CategorySalesRow>,
     val waitressStats: List<WaitressStats>,
     val caisseDuJour: CaisseDuJour,
-)
+) {
+    val marginPercent: Int
+        get() = if (caGenerated <= 0L) 0
+        else ((benefice * 100L) / caGenerated).toInt()
+}
 
 /** CA / bénéfice encaissés (orders PAYEE) pour un caissier. */
 data class CashierPeriodStats(

@@ -224,7 +224,7 @@ class EscPosPrinter @Inject constructor(
 
     private suspend fun buildSessionClosureTicket(session: CaisseSession): List<String> {
         val width = settings.get(SettingsKeys.PRINT_WIDTH, "58").toIntOrNull() ?: 58
-        val shop = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse")
+        val shop = settings.get(SettingsKeys.SHOP_NAME, "NexaGes")
         val address = settings.get(SettingsKeys.SHOP_ADDRESS, "")
         val phone = settings.get(SettingsKeys.SHOP_PHONE, "")
         val df = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
@@ -264,7 +264,7 @@ class EscPosPrinter @Inject constructor(
 
     private suspend fun buildTestTicket(): List<String> {
         val width = settings.get(SettingsKeys.PRINT_WIDTH, "58").toIntOrNull() ?: 58
-        val name = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse")
+        val name = settings.get(SettingsKeys.SHOP_NAME, "NexaGes")
         return listOf(
             center(name, width),
             center("TEST IMPRESSION", width),
@@ -276,7 +276,7 @@ class EscPosPrinter @Inject constructor(
 
     private suspend fun buildOrderTicket(order: Order): List<String> {
         val width = settings.get(SettingsKeys.PRINT_WIDTH, "58").toIntOrNull() ?: 58
-        val shop = settings.get(SettingsKeys.SHOP_NAME, "Maquis Caisse")
+        val shop = settings.get(SettingsKeys.SHOP_NAME, "NexaGes")
         val address = settings.get(SettingsKeys.SHOP_ADDRESS, "")
         val phone = settings.get(SettingsKeys.SHOP_PHONE, "")
         val footer = settings.get(SettingsKeys.TICKET_FOOTER, "Merci pour votre visite.")

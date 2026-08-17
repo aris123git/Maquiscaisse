@@ -3,6 +3,7 @@ package com.maquis.caisse.ui.produits
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.domain.model.Category
 import com.maquis.caisse.domain.model.Product
 import com.maquis.caisse.domain.repository.CategoryRepository
@@ -47,6 +48,7 @@ data class ProduitsUiState(
     val categories: List<String> = emptyList(),
     val form: ProductFormState? = null,
     val snackbarMessage: String? = null,
+    val canManageProducts: Boolean = false,
 )
 
 @HiltViewModel
@@ -57,7 +59,10 @@ class ProduitsViewModel @Inject constructor(
     private val updateProduct: UpdateProductUseCase,
     private val deleteProduct: DeleteProductUseCase,
     private val resolveImage: ResolveProductImageUseCase,
+    private val session: SessionManager,
 ) : ViewModel() {
+
+    private fun isAdmin(): Boolean = session.userOrNull()?.role == "ADMIN"
 
     private val productsFlow: StateFlow<List<Product>> = observeProducts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -66,10 +71,15 @@ class ProduitsViewModel @Inject constructor(
         .map { list -> list.map(Category::name) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _uiState = MutableStateFlow(ProduitsUiState())
+    private val _uiState = MutableStateFlow(ProduitsUiState(canManageProducts = isAdmin()))
     val uiState: StateFlow<ProduitsUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            session.currentUser.collect { user ->
+                _uiState.update { it.copy(canManageProducts = user?.role == "ADMIN") }
+            }
+        }
         viewModelScope.launch {
             productsFlow.collect { products ->
                 _uiState.update { it.copy(products = products) }
@@ -95,11 +105,19 @@ class ProduitsViewModel @Inject constructor(
     fun imageFile(relativePath: String?): File? = resolveImage(relativePath)
 
     fun openCreateForm() {
+        if (!isAdmin()) {
+            _uiState.update { it.copy(snackbarMessage = "Seul l'administrateur peut ajouter un produit") }
+            return
+        }
         val defaultCategory = _uiState.value.categories.firstOrNull() ?: "Boissons"
         _uiState.update { it.copy(form = ProductFormState(category = defaultCategory)) }
     }
 
     fun openEditForm(product: Product) {
+        if (!isAdmin()) {
+            _uiState.update { it.copy(snackbarMessage = "Seul l'administrateur peut modifier un produit") }
+            return
+        }
         _uiState.update {
             it.copy(
                 form = ProductFormState(
@@ -148,6 +166,10 @@ class ProduitsViewModel @Inject constructor(
     }
 
     fun saveForm() {
+        if (!isAdmin()) {
+            _uiState.update { it.copy(snackbarMessage = "Seul l'administrateur peut gérer les produits") }
+            return
+        }
         val form = _uiState.value.form ?: return
         val name = form.name.trim()
         if (name.isEmpty()) {
@@ -223,6 +245,10 @@ class ProduitsViewModel @Inject constructor(
     }
 
     fun deleteCurrent() {
+        if (!isAdmin()) {
+            _uiState.update { it.copy(snackbarMessage = "Seul l'administrateur peut supprimer un produit") }
+            return
+        }
         val id = _uiState.value.form?.editingId ?: return
         viewModelScope.launch {
             try {

@@ -89,11 +89,13 @@ fun ProduitsScreen(
         },
         containerColor = Color.Transparent,
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = viewModel::openCreateForm,
-                containerColor = GestionBlue,
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = "Ajouter un produit")
+            if (state.canManageProducts) {
+                FloatingActionButton(
+                    onClick = viewModel::openCreateForm,
+                    containerColor = GestionBlue,
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Ajouter un produit")
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -106,7 +108,11 @@ fun ProduitsScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "Aucun produit.\nAppuie sur + pour en ajouter.",
+                    text = if (state.canManageProducts) {
+                        "Aucun produit.\nAppuie sur + pour en ajouter."
+                    } else {
+                        "Aucun produit.\nConnecte-toi en Admin pour en ajouter."
+                    },
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

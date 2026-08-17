@@ -13,8 +13,8 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 21
         targetSdk = 34
-        versionCode = 15
-        versionName = "0.7.5-mouvements-expenses"
+        versionCode = 16
+        versionName = "0.7.6-nexages-pack"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -100,6 +100,7 @@ dependencies {
     // Room (persistance locale, offline-first)
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
+    implementation("androidx.documentfile:documentfile:1.0.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
     // Hilt (injection de dépendances)

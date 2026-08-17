@@ -90,6 +90,12 @@ enum class PaymentField {
     DEBT,
 }
 
+data class SavedOrderPrompt(
+    val order: Order,
+    val printEnabled: Boolean,
+    val printMessage: String? = null,
+)
+
 data class CaisseUiState(
     val products: List<Product> = emptyList(),
     val searchQuery: String = "",
@@ -99,6 +105,8 @@ data class CaisseUiState(
     val payment: PaymentFormState = PaymentFormState(),
     val completedSale: Sale? = null,
     val completedOrder: Order? = null,
+    /** Après « Enregistrer commande » : proposer / confirmer l'impression. */
+    val savedOrderPrompt: SavedOrderPrompt? = null,
     val snackbarMessage: String? = null,
     val waitresses: List<AppUser> = emptyList(),
     val tables: List<DiningTable> = emptyList(),
@@ -263,8 +271,11 @@ class CaisseViewModel @Inject constructor(
         _uiState.update { it.copy(cart = cart) }
     }
 
-    /** Enregistre une commande maquis sans paiement obligatoire. */
-    fun saveUnpaidOrder(onCreated: (Long) -> Unit = {}) {
+    /**
+     * Enregistre une commande sans paiement.
+     * Reste en Caisse ; si impression ON : tire le ticket + dialogue OK / réimprimer.
+     */
+    fun saveUnpaidOrder() {
         val state = _uiState.value
         if (state.cart.isEmpty()) {
             _uiState.update { it.copy(snackbarMessage = "Panier vide") }
@@ -284,23 +295,28 @@ class CaisseViewModel @Inject constructor(
                     ),
                 )
                 savedStateHandle[KEY_CART] = CartJson.encode(emptyList())
+                val printEnabled = printer.isEnabled()
+                var printMessage: String? = null
+                if (printEnabled) {
+                    val result = printer.printOrder(order)
+                    printMessage = if (result.isSuccess) {
+                        "Ticket imprimé"
+                    } else {
+                        result.exceptionOrNull()?.message ?: "Échec impression"
+                    }
+                }
                 _uiState.update {
                     it.copy(
                         cart = emptyList(),
                         completedOrder = order,
-                        snackbarMessage = "Commande ${order.publicId} enregistrée — ouvre-la dans Commandes pour marquer payée",
+                        savedOrderPrompt = SavedOrderPrompt(
+                            order = order,
+                            printEnabled = printEnabled,
+                            printMessage = printMessage,
+                        ),
+                        snackbarMessage = "Commande ${order.publicId} enregistrée",
                     )
                 }
-                val printNote = if (printer.isEnabled()) {
-                    val r = printer.printOrder(order)
-                    if (r.isFailure) " — ⚠ Impression : ${r.exceptionOrNull()?.message ?: "échec"}" else ""
-                } else ""
-                _uiState.update {
-                    it.copy(
-                        snackbarMessage = "Commande ${order.publicId} enregistrée — ouvre-la dans Commandes pour marquer payée$printNote",
-                    )
-                }
-                onCreated(order.id)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -309,6 +325,27 @@ class CaisseViewModel @Inject constructor(
                 saleInFlight.set(false)
             }
         }
+    }
+
+    fun reprintSavedOrder() = viewModelScope.launch {
+        val order = _uiState.value.savedOrderPrompt?.order ?: return@launch
+        val result = printer.printOrder(order)
+        _uiState.update {
+            it.copy(
+                savedOrderPrompt = it.savedOrderPrompt?.copy(
+                    printMessage = if (result.isSuccess) {
+                        "Ticket imprimé"
+                    } else {
+                        result.exceptionOrNull()?.message ?: "Échec impression"
+                    },
+                ),
+            )
+        }
+    }
+
+    /** Ferme le dialogue et reste en Caisse. */
+    fun dismissSavedOrderPrompt() {
+        _uiState.update { it.copy(savedOrderPrompt = null) }
     }
 
     fun openPayment() {
@@ -437,10 +474,13 @@ class CaisseViewModel @Inject constructor(
                     ),
                 )
                 savedStateHandle[KEY_CART] = CartJson.encode(emptyList())
-                val printNote = if (printer.isEnabled()) {
-                    val r = printer.printOrder(order)
-                    if (r.isFailure) " — ⚠ Impression : ${r.exceptionOrNull()?.message ?: "échec"}" else ""
-                } else ""
+                var snack = "Commande ${order.publicId} payée"
+                if (printer.isEnabled()) {
+                    val printResult = printer.printOrder(order)
+                    if (printResult.isFailure) {
+                        snack += " — Impression : ${printResult.exceptionOrNull()?.message ?: "échec"}"
+                    }
+                }
                 _uiState.update {
                     it.copy(
                         cart = emptyList(),
@@ -449,7 +489,7 @@ class CaisseViewModel @Inject constructor(
                         completedOrder = order,
                         completedSale = null,
                         quantityOverlay = null,
-                        snackbarMessage = "Commande ${order.publicId} payée$printNote",
+                        snackbarMessage = snack,
                     )
                 }
             } catch (e: CancellationException) {
@@ -471,31 +511,6 @@ class CaisseViewModel @Inject constructor(
 
     fun dismissTicket() {
         _uiState.update { it.copy(completedSale = null, completedOrder = null) }
-    }
-
-    /** Réimprime le dernier ticket sans relancer la vente. */
-    fun printLastOrder() {
-        val order = _uiState.value.completedOrder ?: return
-        viewModelScope.launch {
-            if (!printer.isEnabled()) {
-                _uiState.update { it.copy(snackbarMessage = "Impression désactivée") }
-                return@launch
-            }
-            try {
-                val result = printer.printOrder(order)
-                _uiState.update {
-                    it.copy(
-                        snackbarMessage = if (result.isSuccess) {
-                            "Ticket réimprimé"
-                        } else {
-                            "⚠ Réimpression : ${result.exceptionOrNull()?.message ?: "échec"}"
-                        },
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(snackbarMessage = "⚠ Réimpression : ${e.message ?: "erreur inattendue"}") }
-            }
-        }
     }
 
     fun clearCart() {

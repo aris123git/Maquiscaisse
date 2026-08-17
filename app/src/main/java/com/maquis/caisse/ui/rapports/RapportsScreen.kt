@@ -28,14 +28,17 @@ import com.maquis.caisse.domain.model.DashboardStats
 import com.maquis.caisse.domain.model.OrderStatus
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.domain.model.ProductSalesRow
+import com.maquis.caisse.domain.model.StatsPeriod
 import com.maquis.caisse.domain.model.WaitressStats
 import com.maquis.caisse.domain.repository.CategoryRepository
 import com.maquis.caisse.domain.repository.OrderRepository
 import com.maquis.caisse.domain.repository.UserRepository
-import com.maquis.caisse.ui.commandes.HistoryPeriod
+import com.maquis.caisse.ui.charts.CustomPeriodPickers
+import com.maquis.caisse.ui.charts.PeriodSelector
 import com.maquis.caisse.ui.common.DateRanges
 import com.maquis.caisse.ui.common.DropdownField
 import com.maquis.caisse.ui.common.PageHeader
+import com.maquis.caisse.ui.theme.GestionSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -47,7 +50,10 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class RapportsUiState(
-    val period: HistoryPeriod = HistoryPeriod.TODAY,
+    val period: StatsPeriod = StatsPeriod.TODAY,
+    val customDayMs: Long = System.currentTimeMillis(),
+    val customFromMs: Long = DateRanges.todayBounds().first,
+    val customToMs: Long = DateRanges.todayBounds().second,
     val waitressId: Long? = null,
     val category: String? = null,
     val status: OrderStatus? = null,
@@ -76,8 +82,24 @@ class RapportsViewModel @Inject constructor(
         refresh()
     }
 
-    fun onPeriod(p: HistoryPeriod) {
+    fun onPeriod(p: StatsPeriod) {
         _ui.update { it.copy(period = p) }
+        refresh()
+    }
+
+    fun onCustomDay(ms: Long) {
+        _ui.update { it.copy(customDayMs = ms, period = StatsPeriod.CUSTOM_DAY) }
+        refresh()
+    }
+
+    fun onCustomRange(fromMs: Long, toMs: Long) {
+        _ui.update {
+            it.copy(
+                customFromMs = fromMs,
+                customToMs = toMs,
+                period = StatsPeriod.CUSTOM_RANGE,
+            )
+        }
         refresh()
     }
 
@@ -104,12 +126,12 @@ class RapportsViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             val state = _ui.value
-            val (from, to) = when (state.period) {
-                HistoryPeriod.TODAY -> DateRanges.todayBounds()
-                HistoryPeriod.WEEK -> DateRanges.lastDaysBounds(7)
-                HistoryPeriod.MONTH -> DateRanges.lastDaysBounds(30)
-                HistoryPeriod.ALL -> DateRanges.allTimeBounds()
-            }
+            val (from, to) = DateRanges.boundsFor(
+                state.period,
+                customDayMs = state.customDayMs,
+                customFromMs = state.customFromMs,
+                customToMs = state.customToMs,
+            )
             val dash = orderRepository.dashboard(from, to)
             val wStats = orderRepository.waitressStats(from, to, state.waitressId)
             var cats = orderRepository.categorySales(from, to, state.waitressId)
@@ -144,25 +166,21 @@ fun RapportsScreen(viewModel: RapportsViewModel = hiltViewModel()) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            PageHeader(title = "Rapports", subtitle = "Analyse des ventes et recettes")
+            PageHeader(title = "Rapports", subtitle = "CA, coûts, bénéfices et période")
             TextButton(onClick = viewModel::refresh) { Text("Actualiser") }
         }
+
+        PeriodSelector(selected = ui.period, onSelect = viewModel::onPeriod)
+        CustomPeriodPickers(
+            period = ui.period,
+            customDayMs = ui.customDayMs,
+            customFromMs = ui.customFromMs,
+            customToMs = ui.customToMs,
+            onCustomDay = viewModel::onCustomDay,
+            onCustomRange = viewModel::onCustomRange,
+        )
+
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            DropdownField(
-                label = "Période",
-                selected = ui.period,
-                options = HistoryPeriod.entries,
-                optionLabel = {
-                    when (it) {
-                        HistoryPeriod.TODAY -> "Aujourd'hui"
-                        HistoryPeriod.WEEK -> "7 jours"
-                        HistoryPeriod.MONTH -> "30 jours"
-                        HistoryPeriod.ALL -> "Tout"
-                    }
-                },
-                onSelect = { it?.let(viewModel::onPeriod) },
-                modifier = Modifier.weight(1f),
-            )
             DropdownField(
                 label = "Serveuse",
                 selected = waitresses.firstOrNull { it.id == ui.waitressId },
@@ -211,7 +229,16 @@ fun RapportsScreen(viewModel: RapportsViewModel = hiltViewModel()) {
         if (d != null) {
             Text("CA généré : ${MoneyFormat.format(d.caGenerated)}", fontWeight = FontWeight.Bold)
             Text("CA encaissé : ${MoneyFormat.format(d.caCollected)}", fontWeight = FontWeight.Bold)
-            Text("Reste à encaisser : ${MoneyFormat.format(d.toCollect)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text("Reste à encaisser : ${MoneyFormat.format(d.toCollect)}", fontWeight = FontWeight.Bold)
+            Text(
+                "Coût d'achat : ${MoneyFormat.format(d.costOfGoods)}",
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "Bénéfice : ${MoneyFormat.format(d.benefice)} (${d.marginPercent} %)",
+                fontWeight = FontWeight.Bold,
+                color = GestionSuccess,
+            )
             Text("Nombre de commandes : ${d.ordersToday}")
         }
 
@@ -225,12 +252,18 @@ fun RapportsScreen(viewModel: RapportsViewModel = hiltViewModel()) {
 
         Text("Catégories vendues", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
         ui.categories.forEach {
-            Text("${it.categoryName} · ${it.quantity} · ${MoneyFormat.format(it.revenue)}")
+            Text(
+                "${it.categoryName} · ${it.quantity} · CA ${MoneyFormat.format(it.revenue)} · " +
+                    "bénéfice ${MoneyFormat.format(it.benefice)}",
+            )
         }
 
         Text("Produits vendus", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
         ui.products.forEach {
-            Text("${it.productName} (${it.categoryName}) · ${it.quantity} · ${MoneyFormat.format(it.revenue)}")
+            Text(
+                "${it.productName} (${it.categoryName}) · ${it.quantity} · " +
+                    "CA ${MoneyFormat.format(it.revenue)} · bénéfice ${MoneyFormat.format(it.benefice)}",
+            )
         }
     }
 }

@@ -68,7 +68,7 @@ interface OrderDao {
         SELECT * FROM orders
         WHERE created_at BETWEEN :fromMs AND :toMs
           AND (:cashierId IS NULL OR created_by_user_id = :cashierId)
-          AND status != 'ANNULEE'
+          AND status = 'PAYEE'
         ORDER BY created_at DESC
         """,
     )

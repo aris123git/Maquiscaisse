@@ -64,7 +64,8 @@ data class MouvementsUiState(
     val expenseAmountText: String = "",
     val expenseCategory: String = ExpenseCategories.last(),
 ) {
-    val caAfterExpenses: Long get() = ca - expensesTotal
+    /** Bénéfice net = bénéfice brut − dépenses. */
+    val beneficeNet: Long get() = benefice - expensesTotal
 }
 
 @HiltViewModel

@@ -493,6 +493,7 @@ class OrderRepositoryImpl @Inject constructor(
         toMs: Long,
         cashierId: Long?,
     ): CashierPeriodStats = withContext(Dispatchers.IO) {
+        // Uniquement les commandes encaissées (PAYEE) — pas de CA/bénéfice sur le non payé.
         val orders = orderDao.listByCashierBetween(fromMs, toMs, cashierId)
         val costCache = mutableMapOf<Long, Long>()
         var ca = 0L

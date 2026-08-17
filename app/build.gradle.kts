@@ -13,8 +13,8 @@ android {
         applicationId = "com.maquis.caisse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 27
-        versionName = "0.8.13-mouvements-stock"
+        versionCode = 28
+        versionName = "0.8.14-ca-encaisse-benefice"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

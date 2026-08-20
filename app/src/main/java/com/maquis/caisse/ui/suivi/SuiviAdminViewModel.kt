@@ -4,21 +4,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.domain.model.AppUser
-import com.maquis.caisse.domain.model.CaisseSession
-import com.maquis.caisse.domain.model.CashierPeriodStats
 import com.maquis.caisse.domain.model.Expense
 import com.maquis.caisse.domain.model.ExpenseCategories
 import com.maquis.caisse.domain.model.StatsPeriod
 import com.maquis.caisse.domain.model.StockMovement
-import com.maquis.caisse.domain.repository.CaisseSessionRepository
 import com.maquis.caisse.domain.repository.ExpenseRepository
 import com.maquis.caisse.domain.repository.OrderRepository
 import com.maquis.caisse.domain.repository.StockRepository
 import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.ui.common.DateRanges
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.util.Calendar
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,12 +30,6 @@ enum class MouvementsTab(val label: String, val movementType: String) {
     ENTREE("Entrée", "ENTREE"),
 }
 
-data class MovementGroup(
-    val title: String,
-    val subtitle: String? = null,
-    val movements: List<StockMovement>,
-)
-
 data class MouvementsUiState(
     val isAdmin: Boolean = false,
     /** null = tous les caissiers (admin seulement). */
@@ -48,10 +39,7 @@ data class MouvementsUiState(
     val customFromMs: Long = DateRanges.todayBounds().first,
     val customToMs: Long = DateRanges.todayBounds().second,
     val tab: MouvementsTab = MouvementsTab.SORTIE,
-    /** Affichage plat (un jour / une session) vs regroupé. */
-    val flatMode: Boolean = true,
-    val flatMovements: List<StockMovement> = emptyList(),
-    val groups: List<MovementGroup> = emptyList(),
+    val movements: List<StockMovement> = emptyList(),
     val ca: Long = 0L,
     val benefice: Long = 0L,
     val expensesTotal: Long = 0L,
@@ -63,18 +51,13 @@ data class MouvementsUiState(
     val expenseDescription: String = "",
     val expenseAmountText: String = "",
     val expenseCategory: String = ExpenseCategories.last(),
-) {
-    /** CA et bénéfice déjà nets de dépenses (soustraction faite côté repo). */
-    val beneficeNet: Long get() = benefice
-    val caNet: Long get() = ca
-}
+)
 
 @HiltViewModel
 class SuiviAdminViewModel @Inject constructor(
     private val stockRepository: StockRepository,
     private val expenseRepository: ExpenseRepository,
     private val orderRepository: OrderRepository,
-    private val sessionRepository: CaisseSessionRepository,
     userRepository: UserRepository,
     private val sessionManager: SessionManager,
 ) : ViewModel() {
@@ -94,13 +77,23 @@ class SuiviAdminViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var loadJob: Job? = null
+    private var loadSeq = 0
 
     init {
         refresh()
     }
 
     fun selectTab(tab: MouvementsTab) {
-        _ui.update { it.copy(tab = tab, error = null, success = null) }
+        // Vide tout de suite pour éviter un état hybride Sortie/Entrée pendant le chargement.
+        _ui.update {
+            it.copy(
+                tab = tab,
+                movements = emptyList(),
+                expenses = emptyList(),
+                error = null,
+                success = null,
+            )
+        }
         refresh()
     }
 
@@ -133,6 +126,7 @@ class SuiviAdminViewModel @Inject constructor(
 
     fun refresh() {
         loadJob?.cancel()
+        val seq = ++loadSeq
         loadJob = viewModelScope.launch {
             _ui.update { it.copy(loading = true, error = null) }
             try {
@@ -144,55 +138,56 @@ class SuiviAdminViewModel @Inject constructor(
                     customToMs = state.customToMs,
                 )
                 val userId = state.selectedUserId
-                val type = state.tab.movementType
-                val movements = stockRepository.listMovementsByType(
-                    type = type,
+                val tab = state.tab
+
+                val raw = stockRepository.listMovementsByType(
+                    type = tab.movementType,
                     fromMs = from,
                     toMs = to,
                     userId = userId,
                 )
-                val sessions = sessionRepository.listOpenedBetween(from, to, userId)
-                val singleDay = isSingleCalendarDay(from, to)
-                // Entrée : affichage plat (évite les collisions de sessions ouvertes).
-                val flatMode = singleDay || sessions.size <= 1 || type == "ENTREE"
+                // Dédupe défensif (évite crash LazyColumn sur clé id).
+                val movements = raw
+                    .distinctBy { it.id }
+                    .sortedByDescending { it.createdAtEpochMs }
 
-                val flat: List<StockMovement>
-                val groups: List<MovementGroup>
-                if (flatMode) {
-                    flat = movements.sortedBy { it.createdAtEpochMs }
-                    groups = emptyList()
-                } else {
-                    flat = emptyList()
-                    groups = buildGroups(movements, sessions, type)
+                // Stats financières uniquement sur Sortie (Entrée n'en a pas besoin).
+                var ca = 0L
+                var benefice = 0L
+                var expensesTotal = 0L
+                var expenses: List<Expense> = emptyList()
+                if (tab == MouvementsTab.SORTIE) {
+                    val stats = orderRepository.cashierPeriodStats(from, to, userId)
+                    ca = stats.ca
+                    benefice = stats.benefice
+                    expensesTotal = if (userId != null) {
+                        expenseRepository.totalByUserAndDateRange(userId, from, to)
+                    } else {
+                        expenseRepository.totalBetween(from, to)
+                    }
+                    expenses = if (userId != null) {
+                        expenseRepository.listByUserAndDateRange(userId, from, to)
+                    } else {
+                        expenseRepository.listBetween(from, to)
+                    }
                 }
 
-                val stats: CashierPeriodStats = orderRepository.cashierPeriodStats(from, to, userId)
-                val expensesTotal = if (userId != null) {
-                    expenseRepository.totalByUserAndDateRange(userId, from, to)
-                } else {
-                    expenseRepository.totalBetween(from, to)
-                }
-                val expenses = if (userId != null) {
-                    expenseRepository.listByUserAndDateRange(userId, from, to)
-                } else {
-                    expenseRepository.listBetween(from, to)
-                }
-
+                if (seq != loadSeq) return@launch
                 _ui.update {
                     it.copy(
-                        flatMode = flatMode,
-                        flatMovements = flat,
-                        groups = groups,
-                        ca = stats.ca,
-                        benefice = stats.benefice,
+                        movements = movements,
+                        ca = ca,
+                        benefice = benefice,
                         expensesTotal = expensesTotal,
                         expenses = expenses,
                         loading = false,
+                        error = null,
                     )
                 }
-            } catch (e: kotlinx.coroutines.CancellationException) {
+            } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (seq != loadSeq) return@launch
                 _ui.update {
                     it.copy(
                         loading = false,
@@ -245,14 +240,12 @@ class SuiviAdminViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
-            runCatching {
-                // Toujours l'utilisateur connecté (jamais le caissier consulté).
+            try {
                 expenseRepository.add(
                     description = description,
                     amount = amount,
                     category = state.expenseCategory.ifBlank { null },
                 )
-            }.onSuccess {
                 _ui.update {
                     it.copy(
                         showAddExpense = false,
@@ -261,7 +254,9 @@ class SuiviAdminViewModel @Inject constructor(
                     )
                 }
                 refresh()
-            }.onFailure { e ->
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 _ui.update { it.copy(error = e.message ?: "Échec enregistrement dépense") }
             }
         }
@@ -269,91 +264,5 @@ class SuiviAdminViewModel @Inject constructor(
 
     fun consumeMessage() {
         _ui.update { it.copy(error = null, success = null) }
-    }
-
-    private fun isSingleCalendarDay(fromMs: Long, toMs: Long): Boolean {
-        // ALL / bornes extrêmes : ne jamais traiter comme un seul jour.
-        if (toMs <= fromMs) return true
-        if (toMs >= Long.MAX_VALUE / 2 || fromMs <= 0L) {
-            val spanDays = (toMs - fromMs) / (24L * 60L * 60L * 1000L)
-            return spanDays < 1L
-        }
-        val a = Calendar.getInstance().apply { timeInMillis = fromMs }
-        val b = Calendar.getInstance().apply { timeInMillis = toMs }
-        return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
-            a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
-    }
-
-    private fun buildGroups(
-        movements: List<StockMovement>,
-        sessions: List<CaisseSession>,
-        type: String,
-    ): List<MovementGroup> {
-        val now = System.currentTimeMillis()
-        val assigned = mutableSetOf<Long>()
-        val groups = mutableListOf<MovementGroup>()
-        val dayFmt = java.text.SimpleDateFormat("EEEE d MMMM yyyy", java.util.Locale.FRANCE)
-        val timeFmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE)
-
-        // Sessions fermées d'abord (fenêtre plus précise), puis ouvertes.
-        val orderedSessions = sessions.sortedWith(
-            compareBy<CaisseSession> { if (it.closedAt == null) 1 else 0 }
-                .thenBy { it.openedAt },
-        )
-
-        for (session in orderedSessions) {
-            val end = session.closedAt ?: now
-            val matched = movements.filter { m ->
-                m.id !in assigned &&
-                    m.createdAtEpochMs in session.openedAt..end &&
-                    (
-                        type != "VENTE" ||
-                            m.userId == null ||
-                            m.userId == session.userId
-                        )
-            }
-            if (matched.isEmpty()) continue
-            matched.forEach { assigned.add(it.id) }
-            val dateLabel = dayFmt.format(java.util.Date(session.openedAt))
-            val hours = buildString {
-                append(timeFmt.format(java.util.Date(session.openedAt)))
-                append(" – ")
-                if (session.closedAt != null) {
-                    append(timeFmt.format(java.util.Date(session.closedAt)))
-                } else {
-                    append("en cours")
-                }
-            }
-            groups += MovementGroup(
-                title = "Session ${session.userName} · $dateLabel",
-                subtitle = hours,
-                movements = matched.sortedBy { it.createdAtEpochMs },
-            )
-        }
-
-        val orphans = movements.filter { it.id !in assigned }
-        if (orphans.isNotEmpty()) {
-            val byDay = orphans.groupBy { dayKey(it.createdAtEpochMs) }
-                .toSortedMap()
-            byDay.forEach { (_, dayMovements) ->
-                val first = dayMovements.minByOrNull { it.createdAtEpochMs } ?: return@forEach
-                val label = dayFmt.format(java.util.Date(first.createdAtEpochMs))
-                val title = if (type == "ENTREE") {
-                    "Réappro · $label"
-                } else {
-                    "Hors session · $label"
-                }
-                groups += MovementGroup(
-                    title = title,
-                    movements = dayMovements.sortedBy { it.createdAtEpochMs },
-                )
-            }
-        }
-        return groups
-    }
-
-    private fun dayKey(epochMs: Long): String {
-        val c = Calendar.getInstance().apply { timeInMillis = epochMs }
-        return "${c.get(Calendar.YEAR)}-${c.get(Calendar.DAY_OF_YEAR)}"
     }
 }

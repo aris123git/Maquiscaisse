@@ -8,11 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -20,7 +20,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -38,11 +37,15 @@ import com.maquis.caisse.ui.common.PillTone
 import com.maquis.caisse.ui.common.TextPill
 import com.maquis.caisse.ui.theme.GestionSuccess
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val users by viewModel.users.collectAsStateWithLifecycle()
+    val timeFmt = rememberTimeFmt()
 
     val message = ui.error ?: ui.success
     LaunchedEffect(message) {
@@ -63,14 +66,16 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PageHeader(
-                title = "Mouvements de stock",
-                subtitle = if (ui.isAdmin) {
-                    "Par caissier et période"
-                } else {
-                    "Vos mouvements et dépenses"
-                },
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                PageHeader(
+                    title = "Mouvements",
+                    subtitle = if (ui.isAdmin) {
+                        "Stock · caissier · période"
+                    } else {
+                        "Vos mouvements et dépenses"
+                    },
+                )
+            }
             TextButton(onClick = viewModel::refresh) { Text("Actualiser") }
         }
 
@@ -123,66 +128,46 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
             )
         }
 
+        if (ui.loading && ui.movements.isEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            if (ui.flatMode) {
-                items(ui.flatMovements, key = { it.id }) { movement ->
-                    MinimalMovementRow(movement)
-                }
-                if (ui.flatMovements.isEmpty() && !ui.loading) {
-                    item {
-                        Text(
-                            "Aucun mouvement sur cette période.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(12.dp),
-                        )
-                    }
-                }
-            } else {
-                ui.groups.forEachIndexed { groupIndex, group ->
-                    item(key = "h-$groupIndex-${group.title}") {
-                        Column(modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)) {
-                            Text(
-                                group.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            group.subtitle?.let {
-                                Text(
-                                    it,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                    items(
-                        items = group.movements,
-                        key = { movement -> "g$groupIndex-${movement.id}" },
-                    ) { movement ->
-                        MinimalMovementRow(movement)
-                    }
-                    item(key = "d-$groupIndex-${group.title}") {
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    }
-                }
-                if (ui.groups.isEmpty() && !ui.loading) {
-                    item {
-                        Text(
-                            "Aucun mouvement sur cette période.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(12.dp),
-                        )
-                    }
+            itemsIndexed(
+                items = ui.movements,
+                key = { index, movement -> "${ui.tab.name}-${movement.id}-$index" },
+            ) { _, movement ->
+                MinimalMovementRow(movement = movement, timeLabel = timeFmt.format(Date(movement.createdAtEpochMs)))
+            }
+
+            if (!ui.loading && ui.movements.isEmpty()) {
+                item(key = "empty-${ui.tab.name}") {
+                    Text(
+                        if (ui.tab == MouvementsTab.ENTREE) {
+                            "Aucune entrée de stock sur cette période."
+                        } else {
+                            "Aucune sortie (vente) sur cette période."
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp),
+                    )
                 }
             }
 
             if (ui.tab == MouvementsTab.SORTIE && ui.expenses.isNotEmpty()) {
-                item {
+                item(key = "expenses-header") {
                     Text(
                         "Dépenses de la période",
                         style = MaterialTheme.typography.titleMedium,
@@ -190,7 +175,10 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
                         modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
                     )
                 }
-                items(ui.expenses, key = { "e-${it.id}" }) { expense ->
+                itemsIndexed(
+                    items = ui.expenses,
+                    key = { index, expense -> "e-${expense.id}-$index" },
+                ) { _, expense ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -198,8 +186,11 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            listOfNotNull(expense.description, expense.category, expense.userName.ifBlank { null })
-                                .joinToString(" · "),
+                            listOfNotNull(
+                                expense.description,
+                                expense.category,
+                                expense.userName.ifBlank { null },
+                            ).joinToString(" · "),
                             modifier = Modifier.weight(1f),
                         )
                         Text(MoneyFormat.format(expense.amount), fontWeight = FontWeight.SemiBold)
@@ -222,6 +213,12 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
         )
     }
 }
+
+@Composable
+private fun rememberTimeFmt(): SimpleDateFormat =
+    androidx.compose.runtime.remember {
+        SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE)
+    }
 
 @Composable
 private fun FinancialSummary(
@@ -251,7 +248,7 @@ private fun FinancialSummary(
 }
 
 @Composable
-private fun MinimalMovementRow(movement: StockMovement) {
+private fun MinimalMovementRow(movement: StockMovement, timeLabel: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -259,11 +256,14 @@ private fun MinimalMovementRow(movement: StockMovement) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            movement.productName,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(movement.productName, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                timeLabel + if (!movement.userName.isNullOrBlank()) " · ${movement.userName}" else "",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Text(
             "${movement.previousStock} → ${movement.newStock}",
             style = MaterialTheme.typography.bodyLarge,

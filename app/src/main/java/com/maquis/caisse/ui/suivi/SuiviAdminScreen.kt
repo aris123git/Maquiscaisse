@@ -143,8 +143,8 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
                     }
                 }
             } else {
-                ui.groups.forEach { group ->
-                    item(key = "h-${group.title}") {
+                ui.groups.forEachIndexed { groupIndex, group ->
+                    item(key = "h-$groupIndex-${group.title}") {
                         Column(modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)) {
                             Text(
                                 group.title,
@@ -160,10 +160,15 @@ fun SuiviAdminScreen(viewModel: SuiviAdminViewModel = hiltViewModel()) {
                             }
                         }
                     }
-                    items(group.movements, key = { it.id }) { movement ->
+                    items(
+                        items = group.movements,
+                        key = { movement -> "g$groupIndex-${movement.id}" },
+                    ) { movement ->
                         MinimalMovementRow(movement)
                     }
-                    item(key = "d-${group.title}") { HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp)) }
+                    item(key = "d-$groupIndex-${group.title}") {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    }
                 }
                 if (ui.groups.isEmpty() && !ui.loading) {
                     item {

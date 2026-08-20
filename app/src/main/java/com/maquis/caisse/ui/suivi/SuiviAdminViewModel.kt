@@ -135,7 +135,7 @@ class SuiviAdminViewModel @Inject constructor(
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             _ui.update { it.copy(loading = true, error = null) }
-            runCatching {
+            try {
                 val state = _ui.value
                 val (from, to) = DateRanges.boundsFor(
                     state.period,
@@ -153,7 +153,8 @@ class SuiviAdminViewModel @Inject constructor(
                 )
                 val sessions = sessionRepository.listOpenedBetween(from, to, userId)
                 val singleDay = isSingleCalendarDay(from, to)
-                val flatMode = singleDay || sessions.size == 1
+                // Entrée : affichage plat (évite les collisions de sessions ouvertes).
+                val flatMode = singleDay || sessions.size <= 1 || type == "ENTREE"
 
                 val flat: List<StockMovement>
                 val groups: List<MovementGroup>
@@ -189,7 +190,9 @@ class SuiviAdminViewModel @Inject constructor(
                         loading = false,
                     )
                 }
-            }.onFailure { e ->
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 _ui.update {
                     it.copy(
                         loading = false,
@@ -269,6 +272,12 @@ class SuiviAdminViewModel @Inject constructor(
     }
 
     private fun isSingleCalendarDay(fromMs: Long, toMs: Long): Boolean {
+        // ALL / bornes extrêmes : ne jamais traiter comme un seul jour.
+        if (toMs <= fromMs) return true
+        if (toMs >= Long.MAX_VALUE / 2 || fromMs <= 0L) {
+            val spanDays = (toMs - fromMs) / (24L * 60L * 60L * 1000L)
+            return spanDays < 1L
+        }
         val a = Calendar.getInstance().apply { timeInMillis = fromMs }
         val b = Calendar.getInstance().apply { timeInMillis = toMs }
         return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
@@ -286,15 +295,22 @@ class SuiviAdminViewModel @Inject constructor(
         val dayFmt = java.text.SimpleDateFormat("EEEE d MMMM yyyy", java.util.Locale.FRANCE)
         val timeFmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE)
 
-        for (session in sessions.sortedBy { it.openedAt }) {
+        // Sessions fermées d'abord (fenêtre plus précise), puis ouvertes.
+        val orderedSessions = sessions.sortedWith(
+            compareBy<CaisseSession> { if (it.closedAt == null) 1 else 0 }
+                .thenBy { it.openedAt },
+        )
+
+        for (session in orderedSessions) {
             val end = session.closedAt ?: now
-            val matched = if (type == "VENTE") {
-                movements.filter { m ->
+            val matched = movements.filter { m ->
+                m.id !in assigned &&
                     m.createdAtEpochMs in session.openedAt..end &&
-                        (m.userId == null || m.userId == session.userId)
-                }
-            } else {
-                movements.filter { m -> m.createdAtEpochMs in session.openedAt..end }
+                    (
+                        type != "VENTE" ||
+                            m.userId == null ||
+                            m.userId == session.userId
+                        )
             }
             if (matched.isEmpty()) continue
             matched.forEach { assigned.add(it.id) }

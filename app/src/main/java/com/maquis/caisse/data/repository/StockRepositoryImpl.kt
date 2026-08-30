@@ -27,6 +27,9 @@ class StockRepositoryImpl @Inject constructor(
     override fun observeMovements(limit: Int): Flow<List<StockMovement>> =
         movementDao.observeRecent(limit).map { list -> list.map { it.toDomain() } }
 
+    override fun observeForProduct(productId: Long): Flow<List<StockMovement>> =
+        movementDao.observeForProduct(productId).map { list -> list.map { it.toDomain() } }
+
     override suspend fun listMovementsByType(
         type: String,
         fromMs: Long,
@@ -37,6 +40,21 @@ class StockRepositoryImpl @Inject constructor(
             movementDao.listByTypeUserAndRange(type, userId, fromMs, toMs)
         } else {
             movementDao.listByTypeAndRange(type, fromMs, toMs)
+        }
+        rows.map { it.toDomain() }
+    }
+
+    override suspend fun listMovements(
+        fromMs: Long,
+        toMs: Long,
+        userId: Long?,
+        types: List<String>?,
+        limit: Int,
+    ): List<StockMovement> = withContext(Dispatchers.IO) {
+        val rows = if (types.isNullOrEmpty()) {
+            movementDao.listInRange(fromMs, toMs, userId, limit)
+        } else {
+            movementDao.listByTypesInRange(types, fromMs, toMs, userId, limit)
         }
         rows.map { it.toDomain() }
     }
@@ -59,7 +77,9 @@ class StockRepositoryImpl @Inject constructor(
                 val newStock = when {
                     absoluteNewStock != null -> absoluteNewStock.coerceAtLeast(0)
                     type == "ENTREE" -> previous + quantity.coerceAtLeast(0)
-                    type == "SORTIE" || type == "PERTE" -> (previous - quantity.coerceAtLeast(0)).coerceAtLeast(0)
+                    type == "SORTIE" || type == "PERTE" || type == "VENTE" ->
+                        (previous - quantity.coerceAtLeast(0)).coerceAtLeast(0)
+                    type == "AJUSTEMENT_AUTORISE" -> (previous + quantity).coerceAtLeast(0)
                     else -> previous + quantity
                 }
                 val delta = kotlin.math.abs(newStock - previous)
@@ -69,7 +89,11 @@ class StockRepositoryImpl @Inject constructor(
                         productId = productId,
                         productName = product.name,
                         type = type,
-                        quantity = if (absoluteNewStock != null) delta else quantity.coerceAtLeast(0),
+                        quantity = if (absoluteNewStock != null) {
+                            delta
+                        } else {
+                            quantity.coerceAtLeast(0)
+                        },
                         previousStock = previous,
                         newStock = newStock,
                         motif = motif,

@@ -17,6 +17,15 @@ interface CaisseSessionRepository {
     /** Session actuellement ouverte, ou null. */
     suspend fun getOpenSession(): CaisseSession?
 
+    /** Relève précédente en attente de validation (hors utilisateur courant). */
+    suspend fun getPendingHandoff(): CaisseSession?
+
+    /** Valide la relève précédente. */
+    suspend fun validateHandoff(sessionId: Long)
+
+    /** Signale une anomalie sans bloquer la nouvelle relève. */
+    suspend fun reportHandoffAnomaly(sessionId: Long, note: String)
+
     /** Les 30 dernières sessions (Flow pour l'UI). */
     fun observeRecent(): Flow<List<CaisseSession>>
 

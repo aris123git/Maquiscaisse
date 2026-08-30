@@ -82,18 +82,18 @@ class StockRepositoryImpl @Inject constructor(
                     type == "AJUSTEMENT_AUTORISE" -> (previous + quantity).coerceAtLeast(0)
                     else -> previous + quantity
                 }
-                val delta = kotlin.math.abs(newStock - previous)
+                val recordedQty = when {
+                    absoluteNewStock != null -> kotlin.math.abs(newStock - previous)
+                    type == "AJUSTEMENT_AUTORISE" -> kotlin.math.abs(quantity)
+                    else -> quantity.coerceAtLeast(0)
+                }
                 productDao.update(product.copy(stock = newStock))
                 movementDao.insert(
                     StockMovementEntity(
                         productId = productId,
                         productName = product.name,
                         type = type,
-                        quantity = if (absoluteNewStock != null) {
-                            delta
-                        } else {
-                            quantity.coerceAtLeast(0)
-                        },
+                        quantity = recordedQty,
                         previousStock = previous,
                         newStock = newStock,
                         motif = motif,

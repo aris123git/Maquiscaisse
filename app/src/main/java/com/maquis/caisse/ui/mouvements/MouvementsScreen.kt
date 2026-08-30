@@ -1,6 +1,5 @@
 package com.maquis.caisse.ui.mouvements
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -16,13 +15,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,11 +42,13 @@ import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.domain.model.AppUser
 import com.maquis.caisse.domain.model.Expense
 import com.maquis.caisse.domain.model.ExpenseCategories
+import com.maquis.caisse.domain.model.Product
 import com.maquis.caisse.domain.model.StatsPeriod
 import com.maquis.caisse.domain.model.StockMovement
 import com.maquis.caisse.domain.model.StockMovementType
 import com.maquis.caisse.domain.repository.ExpenseRepository
 import com.maquis.caisse.domain.repository.OrderRepository
+import com.maquis.caisse.domain.repository.ProductRepository
 import com.maquis.caisse.domain.repository.StockRepository
 import com.maquis.caisse.domain.repository.UserRepository
 import com.maquis.caisse.ui.charts.CustomPeriodPickers
@@ -56,6 +60,7 @@ import com.maquis.caisse.ui.common.PageHeader
 import com.maquis.caisse.ui.common.PillTone
 import com.maquis.caisse.ui.common.TextPill
 import com.maquis.caisse.ui.stock.MovementTimelineCard
+import com.maquis.caisse.ui.stock.ProductStockSheet
 import com.maquis.caisse.ui.theme.GestionSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.SimpleDateFormat
@@ -89,11 +94,18 @@ enum class MouvementsFilter(val label: String, val types: List<String>?) {
     ),
 }
 
+enum class MouvementsViewMode(val label: String) {
+    JOURNAL("Journal"),
+    ENTREES_JOUR("Entrées du jour"),
+}
+
 data class DayKpis(
     val entrees: Int = 0,
     val ventes: Int = 0,
     val pertes: Int = 0,
     val sorties: Int = 0,
+    val ecarts: Int = 0,
+    val pertesValeur: Long = 0L,
 )
 
 data class MouvementsUiState(
@@ -104,8 +116,13 @@ data class MouvementsUiState(
     val customFromMs: Long = DateRanges.todayBounds().first,
     val customToMs: Long = DateRanges.todayBounds().second,
     val filter: MouvementsFilter = MouvementsFilter.TOUS,
+    val viewMode: MouvementsViewMode = MouvementsViewMode.JOURNAL,
+    val allMovements: List<StockMovement> = emptyList(),
     val movements: List<StockMovement> = emptyList(),
+    val entreesGroups: List<EntreeProduitGroup> = emptyList(),
     val selected: StockMovement? = null,
+    val productSheet: Product? = null,
+    val productSheetMovements: List<StockMovement> = emptyList(),
     val kpis: DayKpis = DayKpis(),
     val ca: Long = 0L,
     val benefice: Long = 0L,
@@ -126,6 +143,7 @@ class MouvementsViewModel @Inject constructor(
     private val stockRepository: StockRepository,
     private val expenseRepository: ExpenseRepository,
     private val orderRepository: OrderRepository,
+    private val productRepository: ProductRepository,
     userRepository: UserRepository,
     sessionManager: SessionManager,
 ) : ViewModel() {
@@ -144,6 +162,9 @@ class MouvementsViewModel @Inject constructor(
     val users: StateFlow<List<AppUser>> = userRepository.observeActive()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private val products: StateFlow<List<Product>> = productRepository.observeProducts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private var loadJob: Job? = null
 
     init {
@@ -151,7 +172,31 @@ class MouvementsViewModel @Inject constructor(
     }
 
     fun selectFilter(filter: MouvementsFilter) {
-        _ui.update { it.copy(filter = filter, showFilters = false) }
+        _ui.update {
+            it.copy(
+                filter = filter,
+                showFilters = false,
+                viewMode = if (filter == MouvementsFilter.ENTREES) {
+                    MouvementsViewMode.ENTREES_JOUR
+                } else {
+                    it.viewMode
+                },
+            )
+        }
+        refresh()
+    }
+
+    fun setViewMode(mode: MouvementsViewMode) {
+        _ui.update {
+            it.copy(
+                viewMode = mode,
+                filter = if (mode == MouvementsViewMode.ENTREES_JOUR) {
+                    MouvementsFilter.ENTREES
+                } else {
+                    it.filter
+                },
+            )
+        }
         refresh()
     }
 
@@ -182,8 +227,29 @@ class MouvementsViewModel @Inject constructor(
         _ui.update { it.copy(showFilters = !it.showFilters) }
     }
 
+    fun dismissFilters() {
+        _ui.update { it.copy(showFilters = false) }
+    }
+
     fun selectMovement(m: StockMovement?) {
         _ui.update { it.copy(selected = m) }
+    }
+
+    fun openProductSheet(productId: Long) = viewModelScope.launch {
+        val product = productRepository.getProduct(productId) ?: return@launch
+        val today = DateRanges.todayBounds()
+        val movements = stockRepository.listMovements(
+            fromMs = today.first,
+            toMs = today.second,
+            userId = null,
+            types = null,
+            limit = 300,
+        ).filter { it.productId == productId }
+        _ui.update { it.copy(productSheet = product, productSheetMovements = movements) }
+    }
+
+    fun closeProductSheet() {
+        _ui.update { it.copy(productSheet = null, productSheetMovements = emptyList()) }
     }
 
     fun refresh() {
@@ -204,11 +270,22 @@ class MouvementsViewModel @Inject constructor(
                     all.filter { it.type in types }
                 } ?: all
 
+                val priceById = products.value.associate { it.id to it.purchasePrice }
+                val pertesList = all.filter { it.type == StockMovementType.PERTE }
+                val pertesValeur = pertesList.sumOf { m ->
+                    (priceById[m.productId] ?: 0L) * m.quantity
+                }
+                val ecarts = all
+                    .filter { it.type == StockMovementType.INVENTAIRE }
+                    .sumOf { kotlin.math.abs(it.newStock - it.previousStock) }
+
                 val kpis = DayKpis(
                     entrees = all.filter { it.type == StockMovementType.ENTREE }.sumOf { it.quantity },
                     ventes = all.filter { it.type == StockMovementType.VENTE }.sumOf { it.quantity },
-                    pertes = all.filter { it.type == StockMovementType.PERTE }.sumOf { it.quantity },
+                    pertes = pertesList.sumOf { it.quantity },
                     sorties = all.filter { it.type == StockMovementType.SORTIE }.sumOf { it.quantity },
+                    ecarts = ecarts,
+                    pertesValeur = pertesValeur,
                 )
                 val stats = orderRepository.cashierPeriodStats(from, to, userId)
                 val expensesTotal = if (userId != null) {
@@ -224,7 +301,9 @@ class MouvementsViewModel @Inject constructor(
 
                 _ui.update {
                     it.copy(
+                        allMovements = all,
                         movements = filtered.sortedByDescending { m -> m.createdAtEpochMs },
+                        entreesGroups = groupEntreesByProduct(all),
                         kpis = kpis,
                         ca = stats.ca,
                         benefice = stats.benefice,
@@ -308,6 +387,7 @@ class MouvementsViewModel @Inject constructor(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MouvementsScreen(viewModel: MouvementsViewModel = hiltViewModel()) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -315,6 +395,7 @@ fun MouvementsScreen(viewModel: MouvementsViewModel = hiltViewModel()) {
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.FRANCE) }
     val dayFmt = remember { SimpleDateFormat("dd/MM", Locale.FRANCE) }
     val fullFmt = remember { SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.FRANCE) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val message = ui.error ?: ui.success
     LaunchedEffect(message) {
@@ -352,20 +433,18 @@ fun MouvementsScreen(viewModel: MouvementsViewModel = hiltViewModel()) {
                 TextPill(it, if (ui.error != null) PillTone.DANGER else PillTone.SUCCESS)
             }
 
-            if (ui.isAdmin) {
-                KpiRow(ui.kpis, ui.filter, onSelect = viewModel::selectFilter)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MouvementsViewMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = ui.viewMode == mode,
+                        onClick = { viewModel.setViewMode(mode) },
+                        label = { Text(mode.label) },
+                    )
+                }
             }
 
-            if (ui.showFilters) {
-                FilterPanel(
-                    ui = ui,
-                    users = users,
-                    onUser = viewModel::setSelectedUser,
-                    onPeriod = viewModel::onPeriod,
-                    onCustomDay = viewModel::onCustomDay,
-                    onCustomRange = viewModel::onCustomRange,
-                    onFilter = viewModel::selectFilter,
-                )
+            if (ui.isAdmin) {
+                KpiRow(ui.kpis, ui.filter, onSelect = viewModel::selectFilter)
             }
 
             Row(
@@ -388,53 +467,102 @@ fun MouvementsScreen(viewModel: MouvementsViewModel = hiltViewModel()) {
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(ui.movements, key = { it.id }) { m ->
-                        MovementTimelineCard(
-                            m = m,
-                            timeFmt = timeFmt,
-                            dayFmt = dayFmt,
-                            onClick = { viewModel.selectMovement(m) },
+                when (ui.viewMode) {
+                    MouvementsViewMode.ENTREES_JOUR -> {
+                        EntreesDuJourList(
+                            groups = ui.entreesGroups,
+                            onProductClick = viewModel::openProductSheet,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
                         )
                     }
-                    if (ui.movements.isEmpty() && !ui.loading) {
-                        item {
-                            Text(
-                                "Aucun mouvement.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(12.dp),
-                            )
+                    MouvementsViewMode.JOURNAL -> {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(ui.movements, key = { it.id }) { m ->
+                                MovementTimelineCard(
+                                    m = m,
+                                    timeFmt = timeFmt,
+                                    dayFmt = dayFmt,
+                                    onClick = { viewModel.selectMovement(m) },
+                                )
+                            }
+                            if (ui.movements.isEmpty() && !ui.loading) {
+                                item {
+                                    Text(
+                                        "Aucun mouvement.",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(12.dp),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
 
-                if (masterDetail) {
+                if (masterDetail && ui.viewMode == MouvementsViewMode.JOURNAL) {
                     Column(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
                             .verticalScroll(rememberScrollState()),
                     ) {
-                        MovementDetailPane(ui.selected, fullFmt)
+                        MovementDetailPane(
+                            movement = ui.selected,
+                            fullFmt = fullFmt,
+                            onOpenProduct = { id -> viewModel.openProductSheet(id) },
+                        )
                     }
                 }
             }
         }
 
-        if (!masterDetail && ui.selected != null) {
+        if (!masterDetail && ui.selected != null && ui.viewMode == MouvementsViewMode.JOURNAL) {
             val selected = ui.selected!!
             AlertDialog(
                 onDismissRequest = { viewModel.selectMovement(null) },
                 title = { Text(StockMovementType.label(selected.type)) },
-                text = { MovementDetailPane(selected, fullFmt) },
+                text = {
+                    MovementDetailPane(
+                        movement = selected,
+                        fullFmt = fullFmt,
+                        onOpenProduct = { id ->
+                            viewModel.selectMovement(null)
+                            viewModel.openProductSheet(id)
+                        },
+                    )
+                },
                 confirmButton = {
                     TextButton(onClick = { viewModel.selectMovement(null) }) { Text("Fermer") }
                 },
             )
         }
+    }
+
+    if (ui.showFilters) {
+        ModalBottomSheet(
+            onDismissRequest = viewModel::dismissFilters,
+            sheetState = sheetState,
+        ) {
+            FilterPanel(
+                ui = ui,
+                users = users,
+                onUser = viewModel::setSelectedUser,
+                onPeriod = viewModel::onPeriod,
+                onCustomDay = viewModel::onCustomDay,
+                onCustomRange = viewModel::onCustomRange,
+                onFilter = viewModel::selectFilter,
+            )
+        }
+    }
+
+    ui.productSheet?.let { product ->
+        ProductStockSheet(
+            product = product,
+            movements = ui.productSheetMovements,
+            onDismiss = viewModel::closeProductSheet,
+        )
     }
 
     if (ui.showAddExpense) {
@@ -483,21 +611,38 @@ private fun KpiRow(
     selected: MouvementsFilter,
     onSelect: (MouvementsFilter) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        KpiChip("Entrées", "+${kpis.entrees}", selected == MouvementsFilter.ENTREES) {
-            onSelect(MouvementsFilter.ENTREES)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            KpiChip("Entrées", "+${kpis.entrees}", selected == MouvementsFilter.ENTREES) {
+                onSelect(MouvementsFilter.ENTREES)
+            }
+            KpiChip("Ventes", "−${kpis.ventes}", selected == MouvementsFilter.VENTES) {
+                onSelect(MouvementsFilter.VENTES)
+            }
+            KpiChip("Pertes", "−${kpis.pertes}", selected == MouvementsFilter.PERTES) {
+                onSelect(MouvementsFilter.PERTES)
+            }
+            KpiChip("Sorties", "−${kpis.sorties}", selected == MouvementsFilter.SORTIES) {
+                onSelect(MouvementsFilter.SORTIES)
+            }
         }
-        KpiChip("Ventes", "−${kpis.ventes}", selected == MouvementsFilter.VENTES) {
-            onSelect(MouvementsFilter.VENTES)
-        }
-        KpiChip("Pertes", "−${kpis.pertes}", selected == MouvementsFilter.PERTES) {
-            onSelect(MouvementsFilter.PERTES)
-        }
-        KpiChip("Sorties", "−${kpis.sorties}", selected == MouvementsFilter.SORTIES) {
-            onSelect(MouvementsFilter.SORTIES)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            KpiChip("Écarts", "−${kpis.ecarts}", selected == MouvementsFilter.INVENTAIRES) {
+                onSelect(MouvementsFilter.INVENTAIRES)
+            }
+            KpiChip(
+                "Valeur pertes",
+                MoneyFormat.format(kpis.pertesValeur),
+                selected == MouvementsFilter.PERTES,
+            ) {
+                onSelect(MouvementsFilter.PERTES)
+            }
         }
     }
 }
@@ -521,7 +666,14 @@ private fun FilterPanel(
     onCustomRange: (Long, Long) -> Unit,
     onFilter: (MouvementsFilter) -> Unit,
 ) {
-    GlassCard {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .padding(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Filtres", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         if (ui.isAdmin) {
             DropdownField(
                 label = "Caissier",
@@ -543,20 +695,27 @@ private fun FilterPanel(
             onCustomDay = onCustomDay,
             onCustomRange = onCustomRange,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MouvementsFilter.entries.forEach { f ->
-                FilterChip(
-                    selected = ui.filter == f,
-                    onClick = { onFilter(f) },
-                    label = { Text(f.label) },
-                )
+        Text("Type de mouvement", fontWeight = FontWeight.SemiBold)
+        MouvementsFilter.entries.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { f ->
+                    FilterChip(
+                        selected = ui.filter == f,
+                        onClick = { onFilter(f) },
+                        label = { Text(f.label) },
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MovementDetailPane(movement: StockMovement?, fullFmt: SimpleDateFormat) {
+private fun MovementDetailPane(
+    movement: StockMovement?,
+    fullFmt: SimpleDateFormat,
+    onOpenProduct: (Long) -> Unit,
+) {
     if (movement == null) {
         Text(
             "Sélectionne un mouvement",
@@ -573,7 +732,10 @@ private fun MovementDetailPane(movement: StockMovement?, fullFmt: SimpleDateForm
         )
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
         DetailLine("Produit", movement.productName)
-        DetailLine("Quantité", StockMovementType.signedQuantity(movement.type, movement.quantity))
+        TextButton(onClick = { onOpenProduct(movement.productId) }) {
+            Text("Voir la fiche produit")
+        }
+        DetailLine("Quantité", StockMovementType.signedQuantity(movement.type, movement.quantity, movement.previousStock, movement.newStock))
         DetailLine("Stock avant", movement.previousStock.toString())
         DetailLine("Stock après", movement.newStock.toString())
         DetailLine("Type", StockMovementType.label(movement.type))

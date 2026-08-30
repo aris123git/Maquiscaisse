@@ -28,11 +28,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.maquis.caisse.core.SessionManager
 import com.maquis.caisse.domain.model.Product
 import com.maquis.caisse.domain.model.StockMovement
 import com.maquis.caisse.domain.model.StockMovementType
 import com.maquis.caisse.domain.repository.StockRepository
 import com.maquis.caisse.domain.usecase.ObserveProductsUseCase
+import com.maquis.caisse.ui.common.DateRanges
 import com.maquis.caisse.ui.common.DropdownField
 import com.maquis.caisse.ui.common.GlassCard
 import com.maquis.caisse.ui.common.PageHeader
@@ -54,7 +56,10 @@ import kotlinx.coroutines.launch
 class StockViewModel @Inject constructor(
     observeProducts: ObserveProductsUseCase,
     private val stockRepository: StockRepository,
+    sessionManager: SessionManager,
 ) : ViewModel() {
+    val isAdmin: Boolean = sessionManager.userOrNull()?.role == "ADMIN"
+
     val products: StateFlow<List<Product>> = observeProducts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val movements: StateFlow<List<StockMovement>> = stockRepository.observeMovements(300)
@@ -63,6 +68,30 @@ class StockViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
 
+    private val _productSheet = MutableStateFlow<Product?>(null)
+    val productSheet = _productSheet.asStateFlow()
+
+    private val _productSheetMovements = MutableStateFlow<List<StockMovement>>(emptyList())
+    val productSheetMovements = _productSheetMovements.asStateFlow()
+
+    fun openProductSheet(product: Product) = viewModelScope.launch {
+        val today = DateRanges.todayBounds()
+        val list = stockRepository.listMovements(
+            fromMs = today.first,
+            toMs = today.second,
+            userId = null,
+            types = null,
+            limit = 300,
+        ).filter { it.productId == product.id }
+        _productSheet.value = product
+        _productSheetMovements.value = list
+    }
+
+    fun closeProductSheet() {
+        _productSheet.value = null
+        _productSheetMovements.value = emptyList()
+    }
+
     fun adjust(
         product: Product?,
         type: String,
@@ -70,9 +99,39 @@ class StockViewModel @Inject constructor(
         motif: String,
         supplier: String?,
         comment: String?,
+        signedDelta: Int? = null,
     ) = viewModelScope.launch {
         if (product == null) {
             _message.value = "Choisis un produit"
+            return@launch
+        }
+        if (type == StockMovementType.AJUSTEMENT_AUTORISE) {
+            if (!isAdmin) {
+                _message.value = "Réservé à l'administrateur"
+                return@launch
+            }
+            val delta = signedDelta ?: qty
+            if (delta == 0) {
+                _message.value = "Quantité invalide"
+                return@launch
+            }
+            if (motif.isBlank()) {
+                _message.value = "Motif obligatoire pour un ajustement"
+                return@launch
+            }
+            try {
+                stockRepository.adjust(
+                    productId = product.id,
+                    type = type,
+                    quantity = delta,
+                    motif = motif,
+                    supplier = supplier?.ifBlank { null },
+                    comment = comment?.ifBlank { null },
+                )
+                _message.value = "Ajustement autorisé enregistré"
+            } catch (e: Exception) {
+                _message.value = e.message
+            }
             return@launch
         }
         if (qty <= 0) {
@@ -107,14 +166,26 @@ fun StockScreen(
     val products by viewModel.products.collectAsStateWithLifecycle()
     val movements by viewModel.movements.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val productSheet by viewModel.productSheet.collectAsStateWithLifecycle()
+    val productSheetMovements by viewModel.productSheetMovements.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<Product?>(null) }
     var type by remember { mutableStateOf(StockMovementType.ENTREE) }
     var qty by remember { mutableStateOf("1") }
+    var signedSign by remember { mutableStateOf("+") }
     var motif by remember { mutableStateOf("") }
     var supplier by remember { mutableStateOf("") }
     var comment by remember { mutableStateOf("") }
     val df = remember { SimpleDateFormat("HH:mm", Locale.FRANCE) }
     val dayFmt = remember { SimpleDateFormat("dd/MM", Locale.FRANCE) }
+
+    val typeOptions = buildList {
+        add(StockMovementType.ENTREE to "Entrée")
+        add(StockMovementType.SORTIE to "Sortie")
+        add(StockMovementType.PERTE to "Perte")
+        if (viewModel.isAdmin) {
+            add(StockMovementType.AJUSTEMENT_AUTORISE to "Ajustement")
+        }
+    }
 
     Row(
         modifier = Modifier.fillMaxSize().padding(12.dp),
@@ -138,12 +209,13 @@ fun StockScreen(
                     optionLabel = { "${it.name} (stock ${it.stock})" },
                     onSelect = { selected = it },
                 )
+                selected?.let { p ->
+                    TextButtonLike("Voir la fiche produit") {
+                        viewModel.openProductSheet(p)
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                        StockMovementType.ENTREE to "Entrée",
-                        StockMovementType.SORTIE to "Sortie",
-                        StockMovementType.PERTE to "Perte",
-                    ).forEach { (key, label) ->
+                    typeOptions.forEach { (key, label) ->
                         val selectedType = type == key
                         TextPill(
                             label,
@@ -151,6 +223,7 @@ fun StockScreen(
                                 when (key) {
                                     StockMovementType.ENTREE -> PillTone.SUCCESS
                                     StockMovementType.SORTIE -> PillTone.WARNING
+                                    StockMovementType.AJUSTEMENT_AUTORISE -> PillTone.INFO
                                     else -> PillTone.DANGER
                                 }
                             } else {
@@ -167,6 +240,20 @@ fun StockScreen(
                         )
                     }
                 }
+                if (type == StockMovementType.AJUSTEMENT_AUTORISE) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextPill(
+                            "+ ajouter",
+                            if (signedSign == "+") PillTone.SUCCESS else PillTone.NEUTRAL,
+                            modifier = Modifier.clickable { signedSign = "+" },
+                        )
+                        TextPill(
+                            "− retirer",
+                            if (signedSign == "-") PillTone.DANGER else PillTone.NEUTRAL,
+                            modifier = Modifier.clickable { signedSign = "-" },
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = qty,
                     onValueChange = { qty = it.filter { c -> c.isDigit() } },
@@ -174,22 +261,34 @@ fun StockScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (type == StockMovementType.PERTE) {
-                    DropdownField(
-                        label = "Motif perte",
-                        selected = motif.ifBlank { null },
-                        options = StockMovementType.PERTE_MOTIFS,
-                        optionLabel = { it },
-                        onSelect = { motif = it.orEmpty() },
-                    )
-                } else {
-                    OutlinedTextField(
-                        value = motif,
-                        onValueChange = { motif = it },
-                        label = { Text("Motif") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                when (type) {
+                    StockMovementType.PERTE -> {
+                        DropdownField(
+                            label = "Motif perte",
+                            selected = motif.ifBlank { null },
+                            options = StockMovementType.PERTE_MOTIFS,
+                            optionLabel = { it },
+                            onSelect = { motif = it.orEmpty() },
+                        )
+                    }
+                    StockMovementType.AJUSTEMENT_AUTORISE -> {
+                        OutlinedTextField(
+                            value = motif,
+                            onValueChange = { motif = it },
+                            label = { Text("Motif obligatoire") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    else -> {
+                        OutlinedTextField(
+                            value = motif,
+                            onValueChange = { motif = it },
+                            label = { Text("Motif") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
                 if (type == StockMovementType.ENTREE) {
                     OutlinedTextField(
@@ -209,18 +308,33 @@ fun StockScreen(
                 )
                 Button(
                     onClick = {
+                        val raw = qty.toIntOrNull() ?: 0
+                        val signed = if (type == StockMovementType.AJUSTEMENT_AUTORISE) {
+                            if (signedSign == "-") -raw else raw
+                        } else {
+                            null
+                        }
                         viewModel.adjust(
                             product = selected,
                             type = type,
-                            qty = qty.toIntOrNull() ?: 0,
+                            qty = raw,
                             motif = motif,
                             supplier = supplier,
                             comment = comment,
+                            signedDelta = signed,
                         )
                     },
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) { Text("Enregistrer") }
+                ) {
+                    Text(
+                        if (type == StockMovementType.AJUSTEMENT_AUTORISE) {
+                            "Enregistrer l'ajustement"
+                        } else {
+                            "Enregistrer"
+                        },
+                    )
+                }
                 message?.let { TextPill(it, PillTone.SUCCESS) }
             }
 
@@ -234,7 +348,7 @@ fun StockScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 items(alerts, key = { it.id }) { p ->
-                    GlassCard {
+                    GlassCard(onClick = { viewModel.openProductSheet(p) }) {
                         Text(p.name, fontWeight = FontWeight.SemiBold)
                         TextPill("Stock ${p.stock} · seuil ${p.alertThreshold}", PillTone.DANGER)
                     }
@@ -256,11 +370,40 @@ fun StockScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(movements, key = { it.id }) { m ->
-                    MovementTimelineCard(m, df, dayFmt)
+                    MovementTimelineCard(
+                        m = m,
+                        timeFmt = df,
+                        dayFmt = dayFmt,
+                        onClick = {
+                            products.find { it.id == m.productId }?.let {
+                                viewModel.openProductSheet(it)
+                            }
+                        },
+                    )
                 }
             }
         }
     }
+
+    productSheet?.let { product ->
+        ProductStockSheet(
+            product = product,
+            movements = productSheetMovements,
+            onDismiss = viewModel::closeProductSheet,
+        )
+    }
+}
+
+@Composable
+private fun TextButtonLike(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+    )
 }
 
 @Composable
@@ -276,6 +419,7 @@ fun MovementTimelineCard(
         StockMovementType.PERTE -> PillTone.DANGER
         StockMovementType.SORTIE -> PillTone.WARNING
         StockMovementType.INVENTAIRE -> PillTone.CYAN
+        StockMovementType.AJUSTEMENT_AUTORISE -> PillTone.INFO
         else -> PillTone.NEUTRAL
     }
     GlassCard(
@@ -289,7 +433,7 @@ fun MovementTimelineCard(
         TextPill(StockMovementType.label(m.type), tone)
         Text(m.productName, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
         Text(
-            StockMovementType.signedQuantity(m.type, m.quantity),
+            StockMovementType.signedQuantity(m.type, m.quantity, m.previousStock, m.newStock),
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.titleLarge,
         )

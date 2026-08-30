@@ -38,12 +38,21 @@ object StockMovementType {
         else -> type
     }
 
-    fun signedQuantity(type: String, quantity: Int): String {
+    fun signedQuantity(type: String, quantity: Int, previousStock: Int? = null, newStock: Int? = null): String {
+        if (previousStock != null && newStock != null) {
+            val delta = newStock - previousStock
+            return when {
+                delta > 0 -> "+$delta"
+                delta < 0 -> "−${-delta}"
+                else -> "0"
+            }
+        }
         val q = kotlin.math.abs(quantity)
         return when (type) {
-            ENTREE, AVOIR, CORRECTION, AJUSTEMENT_AUTORISE -> "+$q"
+            ENTREE, AVOIR, CORRECTION -> "+$q"
             SORTIE, VENTE, PERTE -> "−$q"
             INVENTAIRE -> "→ $q"
+            AJUSTEMENT_AUTORISE -> "±$q"
             else -> q.toString()
         }
     }

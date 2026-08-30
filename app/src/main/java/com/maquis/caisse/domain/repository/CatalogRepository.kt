@@ -36,11 +36,19 @@ interface UserRepository {
 
 interface StockRepository {
     fun observeMovements(limit: Int = 200): Flow<List<StockMovement>>
+    fun observeForProduct(productId: Long): Flow<List<StockMovement>>
     suspend fun listMovementsByType(
         type: String,
         fromMs: Long,
         toMs: Long,
         userId: Long? = null,
+    ): List<StockMovement>
+    suspend fun listMovements(
+        fromMs: Long,
+        toMs: Long,
+        userId: Long? = null,
+        types: List<String>? = null,
+        limit: Int = 500,
     ): List<StockMovement>
     suspend fun adjust(
         productId: Long,

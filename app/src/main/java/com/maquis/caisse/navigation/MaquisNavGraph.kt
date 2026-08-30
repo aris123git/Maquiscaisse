@@ -20,6 +20,7 @@ import androidx.navigation.navArgument
 import com.maquis.caisse.ui.assistant.AssistantScreen
 import com.maquis.caisse.ui.avoirs.AvoirsScreen
 import com.maquis.caisse.ui.caisse.CaisseScreen
+import com.maquis.caisse.ui.caissesession.CaisseSessionScreen
 import com.maquis.caisse.ui.categories.CategoriesScreen
 import com.maquis.caisse.ui.commandes.CommandesScreen
 import com.maquis.caisse.ui.commandes.HistoriqueScreen
@@ -28,11 +29,12 @@ import com.maquis.caisse.ui.components.MaquisSideBar
 import com.maquis.caisse.ui.components.SideBarViewModel
 import com.maquis.caisse.ui.dashboard.DashboardScreen
 import com.maquis.caisse.ui.dettes.DettesScreen
+import com.maquis.caisse.ui.inventaire.InventaireScreen
+import com.maquis.caisse.ui.mouvements.MouvementsScreen
 import com.maquis.caisse.ui.parametres.ParametresScreen
 import com.maquis.caisse.ui.produits.ProduitsScreen
 import com.maquis.caisse.ui.rapports.RapportsScreen
 import com.maquis.caisse.ui.stock.StockScreen
-import com.maquis.caisse.ui.suivi.SuiviAdminScreen
 import com.maquis.caisse.ui.tables.TablesScreen
 import com.maquis.caisse.ui.users.UsersScreen
 
@@ -104,10 +106,20 @@ fun MaquisNavGraph(navController: NavHostController = rememberNavController()) {
                         TablesScreen()
                     }
                 }
-                composable(Routes.STOCK) { StockScreen() }
+                composable(Routes.STOCK) {
+                    StockScreen(
+                        onOpenInventaire = {
+                            navController.navigate(Routes.INVENTAIRE) {
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                }
+                composable(Routes.INVENTAIRE) { InventaireScreen() }
+                composable(Routes.CAISSE_SESSION) { CaisseSessionScreen() }
                 composable(Routes.DETTES) { DettesScreen() }
                 composable(Routes.AVOIRS) { AvoirsScreen() }
-                composable(Routes.MOUVEMENTS) { SuiviAdminScreen() }
+                composable(Routes.MOUVEMENTS) { MouvementsScreen() }
                 composable(Routes.RAPPORTS) { RapportsScreen() }
                 composable(Routes.UTILISATEURS) {
                     AdminOnlyRoute(isAdmin = isAdmin, navController = navController) {

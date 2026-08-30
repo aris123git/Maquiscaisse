@@ -368,4 +368,18 @@ object Migrations {
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_avoir_items_product_id` ON `avoir_items` (`product_id`)")
         }
     }
+
+    /** Passation de relève (validation caissier suivant). */
+    val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `caisse_sessions` ADD COLUMN `handoff_status` TEXT")
+            db.execSQL("ALTER TABLE `caisse_sessions` ADD COLUMN `validated_by_user_id` INTEGER")
+            db.execSQL("ALTER TABLE `caisse_sessions` ADD COLUMN `validated_by_name` TEXT")
+            db.execSQL("ALTER TABLE `caisse_sessions` ADD COLUMN `validated_at` INTEGER")
+            db.execSQL("ALTER TABLE `caisse_sessions` ADD COLUMN `anomaly_note` TEXT")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_caisse_sessions_handoff_status` ON `caisse_sessions` (`handoff_status`)",
+            )
+        }
+    }
 }

@@ -52,4 +52,38 @@ interface StockMovementDao {
         start: Long,
         end: Long,
     ): List<StockMovementEntity>
+
+    @Query(
+        """
+        SELECT * FROM stock_movements
+        WHERE created_at BETWEEN :start AND :end
+          AND (:userId IS NULL OR user_id = :userId)
+        ORDER BY created_at DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun listInRange(
+        start: Long,
+        end: Long,
+        userId: Long?,
+        limit: Int = 500,
+    ): List<StockMovementEntity>
+
+    @Query(
+        """
+        SELECT * FROM stock_movements
+        WHERE type IN (:types)
+          AND created_at BETWEEN :start AND :end
+          AND (:userId IS NULL OR user_id = :userId)
+        ORDER BY created_at DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun listByTypesInRange(
+        types: List<String>,
+        start: Long,
+        end: Long,
+        userId: Long?,
+        limit: Int = 500,
+    ): List<StockMovementEntity>
 }

@@ -17,7 +17,7 @@ data class StockMovementEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
     @ColumnInfo(name = "product_id") val productId: Long,
     @ColumnInfo(name = "product_name") val productName: String,
-    /** ENTREE | SORTIE | CORRECTION | INVENTAIRE | VENTE | PERTE */
+    /** ENTREE | SORTIE | VENTE | PERTE | INVENTAIRE | AVOIR | CORRECTION | AJUSTEMENT_AUTORISE */
     val type: String,
     val quantity: Int,
     @ColumnInfo(name = "previous_stock") val previousStock: Int,

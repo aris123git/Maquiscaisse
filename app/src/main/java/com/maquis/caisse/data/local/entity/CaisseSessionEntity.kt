@@ -10,6 +10,7 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["user_id"]),
         Index(value = ["opened_at"]),
+        Index(value = ["handoff_status"]),
     ],
 )
 data class CaisseSessionEntity(
@@ -32,4 +33,13 @@ data class CaisseSessionEntity(
     @ColumnInfo(name = "debt_sales") val debtSales: Long = 0L,
     /** Espèces réellement comptées à la clôture (null = pas encore compté). */
     @ColumnInfo(name = "cash_counted") val cashCounted: Long? = null,
+    /**
+     * Passation de relève : null tant que la session est ouverte ;
+     * PENDING / VALIDATED / ANOMALY après clôture.
+     */
+    @ColumnInfo(name = "handoff_status") val handoffStatus: String? = null,
+    @ColumnInfo(name = "validated_by_user_id") val validatedByUserId: Long? = null,
+    @ColumnInfo(name = "validated_by_name") val validatedByName: String? = null,
+    @ColumnInfo(name = "validated_at") val validatedAt: Long? = null,
+    @ColumnInfo(name = "anomaly_note") val anomalyNote: String? = null,
 )

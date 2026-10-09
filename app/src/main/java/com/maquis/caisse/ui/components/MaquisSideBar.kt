@@ -32,6 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.maquis.caisse.core.SettingsKeys
+import com.maquis.caisse.domain.repository.SettingsRepository
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -59,8 +64,14 @@ class SideBarViewModel @Inject constructor(
     private val session: SessionManager,
     private val sessionRepository: CaisseSessionRepository,
     private val kioskManager: KioskManager,
+    settings: SettingsRepository,
 ) : ViewModel() {
     val currentUser = session.currentUser
+
+    /** Option Paramètres : sans suivi de stock, les écrans Stock/Inventaire sont masqués. */
+    val stockTrackingEnabled = settings.observe(SettingsKeys.STOCK_TRACKING_ENABLED)
+        .map { it != "false" }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     fun isAdmin(): Boolean = session.userOrNull()?.role == "ADMIN"
 
@@ -83,6 +94,7 @@ fun MaquisSideBar(
     val currentRoute = navBackStackEntry?.destination?.route
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
     val isAdmin = viewModel.isAdmin()
+    val stockTracking by viewModel.stockTrackingEnabled.collectAsStateWithLifecycle()
 
     val items = listOf(
         NavItem(Routes.CAISSE, "Caisse"),
@@ -103,6 +115,7 @@ fun MaquisSideBar(
         NavItem(Routes.UTILISATEURS, "Utilisateurs", adminOnly = true),
         NavItem(Routes.PARAMETRES, "Paramètres"),
     ).filter { !it.adminOnly || isAdmin }
+        .filter { stockTracking || (it.route != Routes.STOCK && it.route != Routes.INVENTAIRE) }
 
     val screenWidth = LocalConfiguration.current.screenWidthDp
     val sidebarWidth = when {

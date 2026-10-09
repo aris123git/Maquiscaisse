@@ -9,6 +9,7 @@ import com.maquis.caisse.data.print.EscPosPrinter
 import com.maquis.caisse.domain.cart.CartOperations
 import com.maquis.caisse.domain.model.AppUser
 import com.maquis.caisse.domain.model.CartLine
+import com.maquis.caisse.domain.model.FreeEntry
 import com.maquis.caisse.domain.model.CreateOrderRequest
 import com.maquis.caisse.domain.model.DiningTable
 import com.maquis.caisse.domain.model.Order
@@ -113,6 +114,8 @@ data class CaisseUiState(
     val selectedWaitress: AppUser? = null,
     val selectedTable: DiningTable? = null,
     val tablesEnabled: Boolean = true,
+    /** Option Paramètres : bouton « Vente libre » visible. */
+    val freeEntryEnabled: Boolean = true,
 ) {
     val cartTotal: Long get() = CartOperations.total(cart)
 
@@ -176,6 +179,11 @@ class CaisseViewModel @Inject constructor(
                 _uiState.update { it.copy(tablesEnabled = value != "false") }
             }
         }
+        viewModelScope.launch {
+            settingsRepository.observe(SettingsKeys.FREE_ENTRY_ENABLED).collect { value ->
+                _uiState.update { it.copy(freeEntryEnabled = value != "false") }
+            }
+        }
     }
 
     fun imageFile(relativePath: String?): File? = resolveImage(relativePath)
@@ -211,6 +219,23 @@ class CaisseViewModel @Inject constructor(
                 ),
             )
         }
+    }
+
+    /** Entrée libre : ligne saisie à la main (nom + prix + quantité), sans stock. */
+    fun addFreeEntry(name: String, unitPrice: Long, quantity: Int) {
+        if (!_uiState.value.freeEntryEnabled) return
+        if (unitPrice <= 0L || quantity <= 0) {
+            _uiState.update { it.copy(snackbarMessage = "Prix et quantité doivent être > 0") }
+            return
+        }
+        val line = CartLine(
+            productId = FreeEntry.newId(),
+            productName = name.trim().ifEmpty { FreeEntry.DEFAULT_NAME },
+            unitPrice = unitPrice,
+            quantity = quantity,
+            imagePath = null,
+        )
+        setCart(CartOperations.upsert(_uiState.value.cart, line, replace = false))
     }
 
     fun onCartLineLongPress(line: CartLine) {

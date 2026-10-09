@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -24,9 +25,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -51,6 +56,7 @@ fun CaisseScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showFreeEntry by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.snackbarMessage) {
         val message = state.snackbarMessage ?: return@LaunchedEffect
@@ -105,6 +111,14 @@ fun CaisseScreen(
                             modifier = Modifier.weight(1f),
                         )
                     }
+                }
+                if (state.freeEntryEnabled) {
+                    OutlinedButton(
+                        onClick = { showFreeEntry = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp),
+                    ) { Text("+ Vente libre (sans produit)") }
                 }
                 OutlinedTextField(
                     value = state.searchQuery,
@@ -172,6 +186,16 @@ fun CaisseScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(16.dp),
+        )
+    }
+
+    if (showFreeEntry && state.freeEntryEnabled) {
+        FreeEntryDialog(
+            onDismiss = { showFreeEntry = false },
+            onConfirm = { name, price, qty ->
+                viewModel.addFreeEntry(name, price, qty)
+                showFreeEntry = false
+            },
         )
     }
 
@@ -257,4 +281,55 @@ fun CaisseScreen(
             },
         )
     }
+}
+
+/** Saisie d'une vente libre : nom (facultatif), prix, quantité. Aucun stock concerné. */
+@Composable
+private fun FreeEntryDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, price: Long, quantity: Int) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
+    var qty by remember { mutableStateOf("1") }
+    val priceValue = price.toLongOrNull()
+    val qtyValue = qty.toIntOrNull()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Vente libre") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(60) },
+                    label = { Text("Désignation (facultatif)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = price,
+                    onValueChange = { price = it.filter { c -> c.isDigit() }.take(Constants.MAX_MONEY_DIGITS) },
+                    label = { Text("Prix unitaire (FCFA) *") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = qty,
+                    onValueChange = { qty = it.filter { c -> c.isDigit() }.take(Constants.MAX_QUANTITY_DIGITS) },
+                    label = { Text("Quantité *") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = (priceValue ?: 0L) > 0L && (qtyValue ?: 0) > 0,
+                onClick = { onConfirm(name, priceValue ?: 0L, qtyValue ?: 0) },
+            ) { Text("Ajouter au panier", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
 }

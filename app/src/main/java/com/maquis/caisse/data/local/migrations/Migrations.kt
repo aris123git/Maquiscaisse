@@ -382,4 +382,11 @@ object Migrations {
             )
         }
     }
+
+    /** Produits sans suivi de stock. */
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `products` ADD COLUMN `track_stock` INTEGER NOT NULL DEFAULT 1")
+        }
+    }
 }

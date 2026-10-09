@@ -29,7 +29,7 @@ interface ProductDao {
     @Query(
         """
         SELECT * FROM products
-        WHERE is_active = 1 AND stock <= alert_threshold
+        WHERE is_active = 1 AND track_stock = 1 AND stock <= alert_threshold
         ORDER BY stock ASC
         LIMIT 30
         """,

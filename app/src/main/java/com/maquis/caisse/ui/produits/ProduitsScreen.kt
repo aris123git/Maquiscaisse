@@ -69,6 +69,7 @@ fun ProduitsScreen(
                     categoryOptions = state.categories.ifEmpty {
                         listOf("Boissons", "Plats", "Grillades", "Poissons", "Viandes", "Accompagnements", "Desserts", "Divers")
                     },
+                    stockTrackingEnabled = state.stockTrackingEnabled,
                     onBack = viewModel::closeForm,
                     onUpdate = viewModel::updateForm,
                     onImagePicked = viewModel::onImagePicked,

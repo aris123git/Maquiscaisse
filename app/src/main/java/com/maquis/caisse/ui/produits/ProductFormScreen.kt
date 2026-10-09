@@ -60,6 +60,7 @@ fun ProductFormScreen(
     form: ProductFormState,
     existingImageFile: File?,
     categoryOptions: List<String>,
+    stockTrackingEnabled: Boolean = true,
     onBack: () -> Unit,
     onUpdate: ((ProductFormState) -> ProductFormState) -> Unit,
     onImagePicked: (Uri) -> Unit,
@@ -278,6 +279,20 @@ fun ProductFormScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (stockTrackingEnabled) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Suivre le stock de ce produit", style = MaterialTheme.typography.bodyLarge)
+                    Switch(
+                        checked = form.trackStock,
+                        onCheckedChange = { checked -> onUpdate { it.copy(trackStock = checked) } },
+                    )
+                }
+            }
+            if (stockTrackingEnabled && form.trackStock) {
             OutlinedTextField(
                 value = form.stock,
                 onValueChange = { value ->
@@ -306,6 +321,7 @@ fun ProductFormScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

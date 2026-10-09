@@ -34,6 +34,8 @@ data class ProductFormState(
     val stock: String = "0",
     val alertThreshold: String = "5",
     val isActive: Boolean = true,
+    /** false = ce produit n'a pas de stock géré. */
+    val trackStock: Boolean = true,
     /** Image déjà persistée (édition). */
     val existingImagePath: String? = null,
     /** Nouvelle image choisie (galerie/caméra), pas encore sauvegardée. */
@@ -49,6 +51,8 @@ data class ProduitsUiState(
     val form: ProductFormState? = null,
     val snackbarMessage: String? = null,
     val canManageProducts: Boolean = false,
+    /** Option globale Paramètres : suivi de stock actif. */
+    val stockTrackingEnabled: Boolean = true,
 )
 
 @HiltViewModel
@@ -60,6 +64,7 @@ class ProduitsViewModel @Inject constructor(
     private val deleteProduct: DeleteProductUseCase,
     private val resolveImage: ResolveProductImageUseCase,
     private val session: SessionManager,
+    private val settingsRepository: com.maquis.caisse.domain.repository.SettingsRepository,
 ) : ViewModel() {
 
     private fun isAdmin(): Boolean = session.userOrNull()?.role == "ADMIN"
@@ -78,6 +83,11 @@ class ProduitsViewModel @Inject constructor(
         viewModelScope.launch {
             session.currentUser.collect { user ->
                 _uiState.update { it.copy(canManageProducts = user?.role == "ADMIN") }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.observe(com.maquis.caisse.core.SettingsKeys.STOCK_TRACKING_ENABLED).collect { v ->
+                _uiState.update { it.copy(stockTrackingEnabled = v != "false") }
             }
         }
         viewModelScope.launch {
@@ -129,6 +139,7 @@ class ProduitsViewModel @Inject constructor(
                     stock = product.stock.toString(),
                     alertThreshold = product.alertThreshold.toString(),
                     isActive = product.isActive,
+                    trackStock = product.trackStock,
                     existingImagePath = product.imagePath,
                 ),
             )
@@ -188,11 +199,12 @@ class ProduitsViewModel @Inject constructor(
             updateForm { it.copy(errorMessage = "Prix d'achat invalide") }
             return
         }
-        if (stock == null || stock < 0) {
+        val tracked = form.trackStock
+        if (tracked && (stock == null || stock < 0)) {
             updateForm { it.copy(errorMessage = "Stock invalide") }
             return
         }
-        if (alert == null || alert < 0) {
+        if (tracked && (alert == null || alert < 0)) {
             updateForm { it.copy(errorMessage = "Seuil d'alerte invalide") }
             return
         }
@@ -203,10 +215,11 @@ class ProduitsViewModel @Inject constructor(
             category = form.category.trim().ifEmpty { "Divers" },
             salePrice = salePrice,
             purchasePrice = purchasePrice,
-            stock = stock,
-            alertThreshold = alert,
+            stock = stock ?: 0,
+            alertThreshold = alert ?: 0,
             imagePath = form.existingImagePath,
             isActive = form.isActive,
+            trackStock = form.trackStock,
         )
 
         viewModelScope.launch {

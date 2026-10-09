@@ -28,4 +28,6 @@ data class ProductEntity(
     val imagePath: String?,
     @ColumnInfo(name = "is_active")
     val isActive: Boolean = true,
+    @ColumnInfo(name = "track_stock", defaultValue = "1")
+    val trackStock: Boolean = true,
 )

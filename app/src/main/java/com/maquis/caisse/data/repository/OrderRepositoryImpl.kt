@@ -19,6 +19,7 @@ import com.maquis.caisse.domain.model.CashierPeriodStats
 import com.maquis.caisse.domain.model.CategorySalesRow
 import com.maquis.caisse.domain.model.CreateOrderRequest
 import com.maquis.caisse.domain.model.DashboardStats
+import com.maquis.caisse.domain.model.FreeEntry
 import com.maquis.caisse.domain.model.Order
 import com.maquis.caisse.domain.model.OrderLine
 import com.maquis.caisse.domain.model.OrderPayment
@@ -33,6 +34,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import com.maquis.caisse.core.SettingsKeys
+import com.maquis.caisse.domain.repository.SettingsRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -44,7 +47,11 @@ class OrderRepositoryImpl @Inject constructor(
     private val tableDao: DiningTableDao,
     private val detteDao: DetteDao,
     private val session: SessionManager,
+    private val settings: SettingsRepository,
 ) : OrderRepository {
+
+    private suspend fun stockTrackingOn(): Boolean =
+        settings.get(SettingsKeys.STOCK_TRACKING_ENABLED, "true") != "false"
 
     override fun observeOpenOrders(): Flow<List<Order>> =
         orderDao.observeOpen().map { list -> list.map { it.toSummary() } }
@@ -127,7 +134,11 @@ class OrderRepositoryImpl @Inject constructor(
                         orderId = id,
                         productId = line.productId,
                         productName = line.productName,
-                        categoryName = product?.category ?: "",
+                        categoryName = if (FreeEntry.isFree(line.productId)) {
+                            FreeEntry.CATEGORY
+                        } else {
+                            product?.category ?: ""
+                        },
                         unitPrice = line.unitPrice,
                         quantity = line.quantity,
                         lineTotal = line.unitPrice * line.quantity,
@@ -137,8 +148,10 @@ class OrderRepositoryImpl @Inject constructor(
 
                 // Stock : décrémente dès la commande (consommation)
                 request.lines.forEach { line ->
+                    if (FreeEntry.isFree(line.productId)) return@forEach
                     val product = productDao.getById(line.productId)
                         ?: error("Produit introuvable: ${line.productName}")
+                    if (!stockTrackingOn() || !product.trackStock) return@forEach
                     val updated = productDao.decreaseStockIfAvailable(line.productId, line.quantity)
                     require(updated == 1) {
                         "Stock insuffisant: ${line.productName} (dispo ${product.stock})"
@@ -223,6 +236,7 @@ class OrderRepositoryImpl @Inject constructor(
                 // Remet le stock des anciennes lignes, puis décrémente les nouvelles
                 oldItems.forEach { item ->
                     val p = productDao.getById(item.productId) ?: return@forEach
+                    if (!stockTrackingOn() || !p.trackStock) return@forEach
                     val newStock = p.stock + item.quantity
                     productDao.update(p.copy(stock = newStock))
                     db.stockMovementDao().insert(
@@ -241,8 +255,10 @@ class OrderRepositoryImpl @Inject constructor(
                     )
                 }
                 lines.forEach { line ->
+                    if (FreeEntry.isFree(line.productId)) return@forEach
                     val p = productDao.getById(line.productId)
                         ?: error("Produit introuvable: ${line.productName}")
+                    if (!stockTrackingOn() || !p.trackStock) return@forEach
                     val updated = productDao.decreaseStockIfAvailable(line.productId, line.quantity)
                     require(updated == 1) { "Stock insuffisant: ${line.productName}" }
                     db.stockMovementDao().insert(
@@ -310,6 +326,7 @@ class OrderRepositoryImpl @Inject constructor(
         db.withTransaction {
             items.forEach { item ->
                 val p = productDao.getById(item.productId) ?: return@forEach
+                if (!stockTrackingOn() || !p.trackStock) return@forEach
                 val newStock = p.stock + item.quantity
                 productDao.update(p.copy(stock = newStock))
                 db.stockMovementDao().insert(

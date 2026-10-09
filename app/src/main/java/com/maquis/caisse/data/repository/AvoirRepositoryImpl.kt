@@ -12,6 +12,8 @@ import com.maquis.caisse.domain.model.AvoirLine
 import com.maquis.caisse.domain.repository.AvoirRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import com.maquis.caisse.core.SettingsKeys
+import com.maquis.caisse.domain.repository.SettingsRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,7 +22,11 @@ class AvoirRepositoryImpl @Inject constructor(
     private val db: AppDatabase,
     private val dao: AvoirDao,
     private val productDao: ProductDao,
+    private val settings: SettingsRepository,
 ) : AvoirRepository {
+
+    private suspend fun stockTrackingOn(): Boolean =
+        settings.get(SettingsKeys.STOCK_TRACKING_ENABLED, "true") != "false"
 
     override fun observeAll(): Flow<List<Avoir>> =
         combine(dao.observeAll(), dao.observeAllItems()) { avoirs, allItems ->
@@ -95,6 +101,7 @@ class AvoirRepositoryImpl @Inject constructor(
                 if (restoreStock) {
                     items.forEach { line ->
                         val product = productDao.getById(line.productId) ?: return@forEach
+                        if (!stockTrackingOn() || !product.trackStock) return@forEach
                         val newStock = product.stock + line.quantity
                         productDao.update(product.copy(stock = newStock))
                         db.stockMovementDao().insert(

@@ -82,6 +82,7 @@ class ProductRepositoryImpl @Inject constructor(
         alertThreshold = alertThreshold,
         imagePath = imagePath,
         isActive = isActive,
+        trackStock = trackStock,
     )
 
     private fun Product.toEntity(imagePath: String?) = ProductEntity(
@@ -94,5 +95,6 @@ class ProductRepositoryImpl @Inject constructor(
         alertThreshold = alertThreshold,
         imagePath = imagePath,
         isActive = isActive,
+        trackStock = trackStock,
     )
 }

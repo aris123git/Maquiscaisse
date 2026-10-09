@@ -8,6 +8,7 @@ import com.maquis.caisse.data.local.entity.SaleEntity
 import com.maquis.caisse.data.local.entity.SaleItemEntity
 import com.maquis.caisse.domain.cart.CartOperations
 import com.maquis.caisse.domain.model.CompleteSaleRequest
+import com.maquis.caisse.domain.model.FreeEntry
 import com.maquis.caisse.domain.model.PaymentMode
 import com.maquis.caisse.domain.model.Sale
 import com.maquis.caisse.domain.model.SaleItem
@@ -15,6 +16,8 @@ import com.maquis.caisse.domain.payment.PaymentCalculator
 import com.maquis.caisse.domain.repository.SaleRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.maquis.caisse.core.SettingsKeys
+import com.maquis.caisse.domain.repository.SettingsRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,7 +26,11 @@ class SaleRepositoryImpl @Inject constructor(
     private val db: AppDatabase,
     private val saleDao: SaleDao,
     private val productDao: ProductDao,
+    private val settings: SettingsRepository,
 ) : SaleRepository {
+
+    private suspend fun stockTrackingOn(): Boolean =
+        settings.get(SettingsKeys.STOCK_TRACKING_ENABLED, "true") != "false"
 
     override suspend fun completeSale(request: CompleteSaleRequest): Sale =
         withContext(Dispatchers.IO) {
@@ -57,11 +64,13 @@ class SaleRepositoryImpl @Inject constructor(
 
             val saleId = db.withTransaction {
                 request.lines.forEach { line ->
+                    if (FreeEntry.isFree(line.productId)) return@forEach
                     val product = productDao.getById(line.productId)
                         ?: error("Produit introuvable: ${line.productName}")
                     require(product.isActive) {
                         "Produit inactif: ${line.productName}"
                     }
+                    if (!stockTrackingOn() || !product.trackStock) return@forEach
                     val updated = productDao.decreaseStockIfAvailable(
                         productId = line.productId,
                         quantity = line.quantity,

@@ -72,6 +72,7 @@ data class ParametresUiState(
     val ticketFooter: String = "Merci pour votre visite.",
     val printEnabled: Boolean = false,
     val printWidth: String = "58",
+    val printAsImage: Boolean = true,
     val printerAddress: String = "",
     val printerName: String = "",
     val tablesEnabled: Boolean = true,
@@ -269,6 +270,7 @@ class ParametresViewModel @Inject constructor(
                 ticketFooter = settings.get(SettingsKeys.TICKET_FOOTER, "Merci pour votre visite."),
                 printEnabled = settings.isPrintEnabled(),
                 printWidth = settings.get(SettingsKeys.PRINT_WIDTH, "58"),
+                printAsImage = settings.get(SettingsKeys.PRINT_AS_IMAGE, "1") != "0",
                 printerAddress = settings.get(SettingsKeys.PRINTER_ADDRESS, ""),
                 printerName = settings.get(SettingsKeys.PRINTER_NAME, ""),
                 tablesEnabled = settings.get(SettingsKeys.TABLES_ENABLED, "true") == "true",
@@ -291,6 +293,7 @@ class ParametresViewModel @Inject constructor(
         settings.set(SettingsKeys.TICKET_FOOTER, s.ticketFooter.ifBlank { "Merci pour votre visite." })
         settings.setPrintEnabled(s.printEnabled)
         settings.set(SettingsKeys.PRINT_WIDTH, s.printWidth)
+        settings.set(SettingsKeys.PRINT_AS_IMAGE, if (s.printAsImage) "1" else "0")
         settings.set(SettingsKeys.PRINTER_ADDRESS, s.printerAddress)
         settings.set(SettingsKeys.PRINTER_NAME, s.printerName)
         settings.set(SettingsKeys.TABLES_ENABLED, s.tablesEnabled.toString())
@@ -534,6 +537,13 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                 optionLabel = { "$it mm" },
                 onSelect = { v -> if (v != null) viewModel.update { it.copy(printWidth = v) } },
             )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = ui.printAsImage,
+                    onCheckedChange = { c -> viewModel.update { it.copy(printAsImage = c) } },
+                )
+                Text("Envoyer le ticket en image (accents corrects)")
+            }
             Text(
                 "Imprimante : ${ui.printerName.ifBlank { "aucune" }} ${ui.printerAddress}",
                 style = MaterialTheme.typography.bodyMedium,

@@ -16,5 +16,9 @@ object SettingsKeys {
     const val PRINTER_CODEPAGE = "printer_codepage"
     // "1" (défaut) = ticket envoyé comme image (accents corrects) ; "0" = texte ESC/POS.
     const val PRINT_AS_IMAGE = "print_as_image"
+    // "true" (défaut) = suivi de stock actif ; "false" = aucun stock géré (ni blocage, ni décrément).
+    const val STOCK_TRACKING_ENABLED = "stock_tracking_enabled"
+    // "true" (défaut) = bouton « Vente libre » en caisse.
+    const val FREE_ENTRY_ENABLED = "free_entry_enabled"
     const val TABLES_ENABLED = "tables_enabled"
 }

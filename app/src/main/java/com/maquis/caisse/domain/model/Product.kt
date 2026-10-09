@@ -15,4 +15,6 @@ data class Product(
     val alertThreshold: Int,
     val imagePath: String?,
     val isActive: Boolean = true,
+    /** false = produit sans suivi de stock (jamais décrémenté, jamais bloqué « stock insuffisant »). */
+    val trackStock: Boolean = true,
 )

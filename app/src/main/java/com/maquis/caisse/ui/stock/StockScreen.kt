@@ -338,7 +338,7 @@ fun StockScreen(
                 message?.let { TextPill(it, PillTone.SUCCESS) }
             }
 
-            val alerts = products.filter { it.stock <= it.alertThreshold }
+            val alerts = products.filter { it.trackStock && it.stock <= it.alertThreshold }
             TextPill(
                 "${alerts.size} alertes stock",
                 if (alerts.isEmpty()) PillTone.SUCCESS else PillTone.DANGER,

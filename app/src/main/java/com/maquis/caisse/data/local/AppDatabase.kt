@@ -35,11 +35,12 @@ import com.maquis.caisse.data.local.entity.StockMovementEntity
 import com.maquis.caisse.data.local.entity.UserEntity
 
 /**
- * Schéma Room courant : **version 9**.
+ * Schéma Room courant : **version 10**.
  * - v6 : sessions + dettes/avoirs
  * - v7 : + `expenses`
  * - v8 : + `avoir_items` + `avoir_type`
  * - v9 : + relève handoff (validation / anomalie)
+ * - v10 : + `products.track_stock` (produits sans suivi de stock)
  */
 @Database(
     entities = [
@@ -62,7 +63,7 @@ import com.maquis.caisse.data.local.entity.UserEntity
         AvoirItemEntity::class,
         ExpenseEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

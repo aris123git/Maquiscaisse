@@ -76,6 +76,8 @@ data class ParametresUiState(
     val printerAddress: String = "",
     val printerName: String = "",
     val tablesEnabled: Boolean = true,
+    val stockTrackingEnabled: Boolean = true,
+    val freeEntryEnabled: Boolean = true,
     val devices: List<BtDeviceUi> = emptyList(),
     val message: String? = null,
     val backupBusy: Boolean = false,
@@ -274,6 +276,8 @@ class ParametresViewModel @Inject constructor(
                 printerAddress = settings.get(SettingsKeys.PRINTER_ADDRESS, ""),
                 printerName = settings.get(SettingsKeys.PRINTER_NAME, ""),
                 tablesEnabled = settings.get(SettingsKeys.TABLES_ENABLED, "true") == "true",
+                stockTrackingEnabled = settings.get(SettingsKeys.STOCK_TRACKING_ENABLED, "true") != "false",
+                freeEntryEnabled = settings.get(SettingsKeys.FREE_ENTRY_ENABLED, "true") != "false",
             )
         }
         refreshKioskUi()
@@ -297,6 +301,8 @@ class ParametresViewModel @Inject constructor(
         settings.set(SettingsKeys.PRINTER_ADDRESS, s.printerAddress)
         settings.set(SettingsKeys.PRINTER_NAME, s.printerName)
         settings.set(SettingsKeys.TABLES_ENABLED, s.tablesEnabled.toString())
+        settings.set(SettingsKeys.STOCK_TRACKING_ENABLED, s.stockTrackingEnabled.toString())
+        settings.set(SettingsKeys.FREE_ENTRY_ENABLED, s.freeEntryEnabled.toString())
         _ui.update { it.copy(message = "Paramètres enregistrés") }
     }
 
@@ -488,6 +494,20 @@ fun ParametresScreen(viewModel: ParametresViewModel = hiltViewModel()) {
                 onCheckedChange = { c -> viewModel.update { it.copy(tablesEnabled = c) } },
             )
             Text("Activer la gestion des tables")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = ui.stockTrackingEnabled,
+                onCheckedChange = { c -> viewModel.update { it.copy(stockTrackingEnabled = c) } },
+            )
+            Text("Activer le suivi de stock")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = ui.freeEntryEnabled,
+                onCheckedChange = { c -> viewModel.update { it.copy(freeEntryEnabled = c) } },
+            )
+            Text("Activer la vente libre (entrée libre en caisse)")
         }
         }
 

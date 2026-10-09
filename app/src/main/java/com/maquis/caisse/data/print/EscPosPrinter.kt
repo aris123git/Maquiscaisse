@@ -141,8 +141,10 @@ class EscPosPrinter @Inject constructor(
 
                     // Écrire les données
                     val codepage = codepageSetting()
+                    val raster = if (asImageSetting()) buildRaster(lines) else null
                     socket?.outputStream?.use { out ->
-                        writeEscPos(out, lines, codepage)
+                        if (raster != null) writeEscPosImage(out, raster)
+                        else writeEscPos(out, lines, codepage)
                     }
 
                     // Flush supplémentaire pour s'assurer que tout est envoyé
@@ -187,6 +189,40 @@ class EscPosPrinter @Inject constructor(
 
     private suspend fun codepageSetting(): Int =
         settings.get(SettingsKeys.PRINTER_CODEPAGE, "0").toIntOrNull() ?: 0
+
+    private suspend fun asImageSetting(): Boolean =
+        settings.get(SettingsKeys.PRINT_AS_IMAGE, "1") != "0"
+
+    /** Rend le ticket en image ; null si échec (on retombe alors sur le texte). */
+    private suspend fun buildRaster(lines: List<String>): ByteArray? = try {
+        val width = settings.get(SettingsKeys.PRINT_WIDTH, "58").toIntOrNull() ?: 58
+        val bmp = TicketRasterizer.render(lines, width)
+        try {
+            TicketRasterizer.toRasterCommands(bmp)
+        } finally {
+            bmp.recycle()
+        }
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun writeEscPosImage(out: OutputStream, raster: ByteArray) {
+        out.write(byteArrayOf(0x1B, 0x40)) // ESC @ — init
+        out.write(byteArrayOf(0x1B, 0x61, 0x00)) // alignement gauche
+        // Envoi par blocs pour ne pas saturer le tampon Bluetooth de l'imprimante.
+        var off = 0
+        val chunk = 1024
+        while (off < raster.size) {
+            val n = minOf(chunk, raster.size - off)
+            out.write(raster, off, n)
+            out.flush()
+            off += n
+            Thread.sleep(15)
+        }
+        out.write(byteArrayOf(0x0A, 0x0A, 0x0A))
+        out.write(byteArrayOf(0x1D, 0x56, 0x00)) // GS V 0 — coupe papier
+        out.flush()
+    }
 
     private fun writeEscPos(out: OutputStream, lines: List<String>, codepage: Int) {
         out.write(byteArrayOf(0x1B, 0x40)) // ESC @ — init / reset imprimante
